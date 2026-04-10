@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3)",
+      "Bash(npm install:*)",
+      "Bash(node -e \"const {makeWASocket,fetchLatestBaileysVersion,useMultiFileAuthState,DisconnectReason}=require\\('@whiskeysockets/baileys'\\); console.log\\('OK', typeof makeWASocket, typeof fetchLatestBaileysVersion\\)\")",
+      "Bash('/Users/darie/Library/Application Support/Herd/config/nvm/versions/node/v24.14.0/bin/node' --version)",
+      "Bash('/Users/darie/Library/Application Support/Herd/config/nvm/versions/node/v24.14.0/bin/npm' install @whiskeysockets/baileys qrcode pino)",
+      "Bash(\"/Users/darie/Library/Application Support/Herd/config/nvm/versions/node/v24.14.0/bin/node\" server/index.js)",
+      "Bash('/Users/darie/Library/Application Support/Herd/config/nvm/versions/node/v24.14.0/bin/npm' rebuild)",
+      "Bash(npm rebuild:*)"
+    ]
+  }
+}
