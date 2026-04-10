@@ -18,7 +18,8 @@ const navItems = [
   { group: 'Sistem', items: [
     { to: '/installations', label: 'Pasang Baru',    icon: '🔧' },
     { to: '/tickets',       label: 'Pengaduan',      icon: '🎫' },
-    { to: '/users',         label: 'Manajemen User', icon: '👤' },
+    { to: '/master-ticket', label: 'Master Tiket',   icon: '🗂️', adminOnly: true },
+    { to: '/users',         label: 'Manajemen User', icon: '👤', adminOnly: true },
     { to: '/settings',      label: 'Pengaturan',     icon: '⚙️' },
   ]},
 ]
@@ -40,6 +41,7 @@ const pageTitles = {
   '/cashbook':      '📒 Buku Kas',
   '/installations': '🔧 Pasang Baru',
   '/tickets':       '🎫 Pengaduan',
+  '/master-ticket': '🗂️ Master Tiket',
   '/users':         '👤 Manajemen User',
   '/tariff': '$ Tarif',
   '/reports': '📈 Laporan',
@@ -144,19 +146,21 @@ function Sidebar({ open, onClose, user, onLogout }) {
         {navItems.map(section => (
           <div key={section.group} className="nav-section">
             <div className="nav-label">{section.group}</div>
-            {section.items.map(item => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                end={item.end}
-                className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
-                onClick={() => { if (window.innerWidth <= 768) onClose() }}
-                style={{ textDecoration: 'none' }}
-              >
-                <span style={{ fontSize: 16 }}>{item.icon}</span>
-                {item.label}
-              </NavLink>
-            ))}
+            {section.items
+              .filter(item => !item.adminOnly || user?.role === 'admin')
+              .map(item => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end={item.end}
+                  className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+                  onClick={() => { if (window.innerWidth <= 768) onClose() }}
+                  style={{ textDecoration: 'none' }}
+                >
+                  <span style={{ fontSize: 16 }}>{item.icon}</span>
+                  {item.label}
+                </NavLink>
+              ))}
           </div>
         ))}
       </div>

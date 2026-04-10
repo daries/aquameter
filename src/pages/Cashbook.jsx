@@ -268,17 +268,17 @@ export default function Cashbook() {
       <div className="stats-grid" style={{ marginBottom: 20 }}>
         <Card style={{ padding: '14px 16px', background: 'var(--ocean)', color: '#fff', border: 'none' }}>
           <div style={{ fontSize: 11, opacity: 0.7 }}>Total Pemasukan</div>
-          <div style={{ fontFamily: 'Syne,sans-serif', fontSize: 22, fontWeight: 800, marginTop: 4 }}>{fmtShort(totalIncome)}</div>
+          <div style={{ fontFamily: 'Outfit,sans-serif', fontSize: 22, fontWeight: 800, marginTop: 4 }}>{fmtShort(totalIncome)}</div>
           <div style={{ fontSize: 11, opacity: 0.55, marginTop: 2 }}>{summary?.count_income || 0} transaksi</div>
         </Card>
         <Card style={{ padding: '14px 16px', background: 'var(--danger)', color: '#fff', border: 'none' }}>
           <div style={{ fontSize: 11, opacity: 0.7 }}>Total Pengeluaran</div>
-          <div style={{ fontFamily: 'Syne,sans-serif', fontSize: 22, fontWeight: 800, marginTop: 4 }}>{fmtShort(totalExpense)}</div>
+          <div style={{ fontFamily: 'Outfit,sans-serif', fontSize: 22, fontWeight: 800, marginTop: 4 }}>{fmtShort(totalExpense)}</div>
           <div style={{ fontSize: 11, opacity: 0.55, marginTop: 2 }}>{summary?.count_expense || 0} transaksi</div>
         </Card>
         <Card style={{ padding: '14px 16px', background: saldo >= 0 ? 'var(--mint)' : 'var(--coral)', color: '#fff', border: 'none' }}>
           <div style={{ fontSize: 11, opacity: 0.7 }}>Saldo</div>
-          <div style={{ fontFamily: 'Syne,sans-serif', fontSize: 22, fontWeight: 800, marginTop: 4 }}>{fmtShort(Math.abs(saldo))}</div>
+          <div style={{ fontFamily: 'Outfit,sans-serif', fontSize: 22, fontWeight: 800, marginTop: 4 }}>{fmtShort(Math.abs(saldo))}</div>
           <div style={{ fontSize: 11, opacity: 0.55, marginTop: 2 }}>{saldo >= 0 ? 'Surplus' : 'Defisit'}</div>
         </Card>
       </div>

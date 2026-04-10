@@ -268,18 +268,18 @@ export default function Dashboard() {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
             <div style={{ background: 'var(--success-bg)', borderRadius: 12, padding: '12px 14px' }}>
               <div style={{ fontSize: 11, color: 'var(--mint)', fontWeight: 600, marginBottom: 4 }}>▲ Pemasukan</div>
-              <div style={{ fontFamily: 'Syne,sans-serif', fontSize: 18, fontWeight: 800, color: 'var(--mint)' }}>{fmtShort(kasIncome)}</div>
+              <div style={{ fontFamily: 'Outfit,sans-serif', fontSize: 18, fontWeight: 800, color: 'var(--mint)' }}>{fmtShort(kasIncome)}</div>
             </div>
             <div style={{ background: 'var(--danger-bg)', borderRadius: 12, padding: '12px 14px' }}>
               <div style={{ fontSize: 11, color: 'var(--danger)', fontWeight: 600, marginBottom: 4 }}>▼ Pengeluaran</div>
-              <div style={{ fontFamily: 'Syne,sans-serif', fontSize: 18, fontWeight: 800, color: 'var(--danger)' }}>{fmtShort(kasExpense)}</div>
+              <div style={{ fontFamily: 'Outfit,sans-serif', fontSize: 18, fontWeight: 800, color: 'var(--danger)' }}>{fmtShort(kasExpense)}</div>
             </div>
           </div>
 
           {/* Saldo total */}
           <div style={{ background: kasSaldo >= 0 ? 'var(--ocean-pale)' : 'var(--danger-bg)', borderRadius: 12, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
             <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-sec)' }}>Saldo Kas</span>
-            <span style={{ fontFamily: 'Syne,sans-serif', fontSize: 20, fontWeight: 800, color: kasSaldo >= 0 ? 'var(--ocean)' : 'var(--danger)' }}>
+            <span style={{ fontFamily: 'Outfit,sans-serif', fontSize: 20, fontWeight: 800, color: kasSaldo >= 0 ? 'var(--ocean)' : 'var(--danger)' }}>
               {kasSaldo >= 0 ? '' : '-'}{fmtShort(Math.abs(kasSaldo))}
             </span>
           </div>
@@ -306,7 +306,7 @@ export default function Dashboard() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <Card style={{ background: 'var(--ocean)', color: '#fff', border: 'none', marginBottom: 0 }}>
             <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 8 }}>Meter Terbaca Bulan Ini</div>
-            <div style={{ fontFamily: 'Syne,sans-serif', fontSize: 32, fontWeight: 800 }}>
+            <div style={{ fontFamily: 'Outfit,sans-serif', fontSize: 32, fontWeight: 800 }}>
               {readThisMonth}
               <span style={{ fontSize: 16, fontWeight: 400, opacity: 0.7 }}> / {totalCust}</span>
             </div>
@@ -318,7 +318,7 @@ export default function Dashboard() {
 
           <Card style={{ marginBottom: 0 }}>
             <div style={{ fontSize: 12, color: 'var(--text-hint)', marginBottom: 8 }}>Total Piutang</div>
-            <div style={{ fontFamily: 'Syne,sans-serif', fontSize: 28, fontWeight: 800, color: 'var(--danger)' }}>
+            <div style={{ fontFamily: 'Outfit,sans-serif', fontSize: 28, fontWeight: 800, color: 'var(--danger)' }}>
               {fmtShort(totalPiutang)}
             </div>
             <div style={{ fontSize: 12, color: 'var(--text-sec)', marginTop: 4 }}>{unpaidCount} tagihan tertunggak</div>
@@ -326,7 +326,7 @@ export default function Dashboard() {
 
           <Card style={{ marginBottom: 0 }}>
             <div style={{ fontSize: 12, color: 'var(--text-hint)', marginBottom: 8 }}>Total Pendapatan (All Time)</div>
-            <div style={{ fontFamily: 'Syne,sans-serif', fontSize: 24, fontWeight: 800, color: 'var(--ocean)' }}>
+            <div style={{ fontFamily: 'Outfit,sans-serif', fontSize: 24, fontWeight: 800, color: 'var(--ocean)' }}>
               {fmtShort(summary?.total_paid || 0)}
             </div>
             <div style={{ fontSize: 12, color: 'var(--text-sec)', marginTop: 4 }}>dari {fmtShort(summary?.total_billed || 0)} tagihan</div>

@@ -27,7 +27,7 @@
 }
 
 .logo-text {
-  font-family: 'Syne', sans-serif;
+  font-family: 'Outfit', sans-serif;
   font-size: 20px;
   font-weight: 700;
   color: #fff;
@@ -138,7 +138,7 @@
 }
 
 .page-title {
-  font-family: 'Syne', sans-serif;
+  font-family: 'Outfit', sans-serif;
   font-size: 16px;
   font-weight: 700;
   color: var(--text);
@@ -162,7 +162,7 @@
   cursor: pointer;
   font-size: 13px;
   font-weight: 500;
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Plus Jakarta Sans', sans-serif;
   transition: all 0.18s ease;
   white-space: nowrap;
   line-height: 1.4;
@@ -228,7 +228,7 @@
 }
 
 .card-title {
-  font-family: 'Syne', sans-serif;
+  font-family: 'Outfit', sans-serif;
   font-size: 14px;
   font-weight: 700;
   color: var(--text);
@@ -281,7 +281,7 @@
 .stat-icon.mint  { background: #E8F8F0; }
 
 .stat-value {
-  font-family: 'Syne', sans-serif;
+  font-family: 'Outfit', sans-serif;
   font-size: 26px;
   font-weight: 800;
   color: var(--text);
@@ -347,7 +347,7 @@
   color: var(--text);
   background: var(--card);
   outline: none;
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Plus Jakarta Sans', sans-serif;
   transition: border-color 0.2s, box-shadow 0.2s;
   appearance: auto;
 }
@@ -429,7 +429,7 @@
 }
 
 .modal-title {
-  font-family: 'Syne', sans-serif;
+  font-family: 'Outfit', sans-serif;
   font-size: 18px;
   font-weight: 700;
   margin-bottom: 20px;
@@ -468,7 +468,7 @@
   font-weight: 500;
   background: transparent;
   color: var(--text-sec);
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Plus Jakarta Sans', sans-serif;
   transition: all 0.18s ease;
   white-space: nowrap;
 }
@@ -515,7 +515,7 @@
 }
 
 .meter-number {
-  font-family: 'DM Mono', monospace;
+  font-family: 'JetBrains Mono', monospace;
   font-size: 46px;
   font-weight: 500;
   letter-spacing: 6px;
@@ -593,14 +593,14 @@
 }
 
 .invoice-number {
-  font-family: 'DM Mono', monospace;
+  font-family: 'JetBrains Mono', monospace;
   font-size: 12px;
   opacity: 0.65;
   letter-spacing: 0.5px;
 }
 
 .invoice-amount {
-  font-family: 'Syne', sans-serif;
+  font-family: 'Outfit', sans-serif;
   font-size: 32px;
   font-weight: 800;
   margin-top: 4px;
@@ -622,7 +622,7 @@
 }
 
 .invoice-total-val {
-  font-family: 'Syne', sans-serif;
+  font-family: 'Outfit', sans-serif;
   font-size: 20px;
   font-weight: 800;
   color: var(--ocean);
@@ -779,7 +779,6 @@
 @media (max-width: 768px) {
   /* Sidebar */
   .sidebar { z-index: 200; }
-  /* On mobile, sidebar-open should NOT push main (overlay mode) */
   .sidebar-open .main { margin-left: 0; }
 
   .content { padding: 14px 14px 76px; }
@@ -827,25 +826,66 @@
   .stat-value { font-size: 22px; }
   .card { padding: 14px; }
 
-  /* Tabs */
-  .tabs { gap: 2px; }
-  .tab { font-size: 12px; padding: 7px 10px; }
+  /* Tabs — scrollable horizontal */
+  .tabs { gap: 2px; overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; padding-bottom: 3px; scrollbar-width: none; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab { font-size: 12px; padding: 7px 10px; flex-shrink: 0; }
 
-  /* Modal */
+  /* Inputs — font-size 16px cegah iOS auto-zoom, min-height touch-friendly */
+  .form-input,
+  .form-select {
+    font-size: 16px;
+    min-height: 48px;
+    padding: 10px 14px;
+  }
+  .form-input.mono { font-size: 18px; font-weight: 700; }
+
+  /* Input addon tinggi match */
+  .input-addon { min-height: 48px; font-size: 14px; padding: 0 14px; }
+
+  /* Buttons touch-friendly */
+  .btn { min-height: 44px; font-size: 14px; padding: 10px 18px; }
+  .btn-sm { min-height: 36px; font-size: 12px; padding: 6px 12px; }
+
+  /* Modal — slide up dari bawah */
   .modal { padding: 20px 16px; border-radius: 16px; }
-  .modal-overlay { padding: 12px; align-items: flex-end; }
-  .modal { border-radius: 20px 20px 0 0; max-height: 92vh; width: 100% !important; }
+  .modal-overlay { padding: 0; align-items: flex-end; }
+  .modal { border-radius: 24px 24px 0 0; max-height: 92vh; width: 100% !important; overflow-y: auto; }
   .modal-actions { flex-direction: column-reverse; gap: 8px; }
-  .modal-actions .btn { width: 100%; justify-content: center; }
+  .modal-actions .btn { width: 100%; justify-content: center; min-height: 50px; font-size: 15px; }
 
   /* Tables */
   .table-wrap { font-size: 12px; }
   th, td { padding: 9px 10px; }
   .hide-mobile { display: none; }
 
+  /* Step bar */
+  .step-circle { width: 26px; height: 26px; font-size: 11px; }
+  .step-label { font-size: 9px; }
+  .step-line { top: 13px; }
+
+  /* Camera portrait */
+  .camera-live-wrap { aspect-ratio: 4/3; }
+
+  /* Stand input besar di mobile */
+  .stand-input-lg {
+    font-size: 28px !important;
+    font-weight: 800 !important;
+    text-align: center;
+    min-height: 64px !important;
+    letter-spacing: 2px;
+  }
+
+  /* Customer info card compact */
+  .customer-info-row { font-size: 12px; }
+
   /* Invoice */
   .invoice-amount { font-size: 26px; }
   .invoice-total-val { font-size: 18px; }
+
+  /* Meter hero compact */
+  .meter-display { padding: 18px 16px 20px; }
+  .meter-meta-item { font-size: 10px; }
 }
 
 @media (max-width: 480px) {
@@ -856,6 +896,17 @@
   .stat-card { padding: 14px; }
   .meter-number { font-size: 26px; letter-spacing: 2px; }
   .invoice-amount { font-size: 22px; }
+
+  /* Camera square di layar kecil */
+  .camera-live-wrap { aspect-ratio: 1/1; }
+
+  /* Tombol simpan meter — sangat prominent */
+  .btn-save-meter {
+    min-height: 56px !important;
+    font-size: 16px !important;
+    font-weight: 700 !important;
+    border-radius: 16px !important;
+  }
 }
 
 /* ─── Login Page ─── */
@@ -898,7 +949,7 @@
 }
 
 .login-logo-title {
-  font-family: 'Syne', sans-serif;
+  font-family: 'Outfit', sans-serif;
   font-size: 22px;
   font-weight: 800;
   color: var(--text);
@@ -911,7 +962,7 @@
 }
 
 .login-heading {
-  font-family: 'Syne', sans-serif;
+  font-family: 'Outfit', sans-serif;
   font-size: 20px;
   font-weight: 700;
   color: var(--text);
@@ -968,7 +1019,7 @@
   padding: 2px 8px;
   font-size: 12px;
   color: var(--ocean);
-  font-family: 'DM Mono', monospace;
+  font-family: 'JetBrains Mono', monospace;
 }
 
 /* ─── Sidebar user ─── */

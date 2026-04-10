@@ -64,9 +64,34 @@ async function handleMessage(jid, _phone, rawText, deps) {
       `• *catat* — Catat pembacaan meter mandiri\n` +
       `• *tagihan* — Cek tagihan bulan ini\n` +
       `• *aduan* — Laporkan keluhan/gangguan\n` +
+      `• *tiket* — Cek status pengaduan\n` +
       `• *bantuan* — Tampilkan menu ini\n` +
       `• *batal* — Batalkan proses yang sedang berjalan`
     )
+    return
+  }
+
+  // ── Cek status tiket — bisa dari perintah atau nomor tiket langsung ──
+  if (['tiket', 'cek tiket', 'status tiket', 'pengaduan'].includes(lower)) {
+    clearSession(jid)
+    setSession(jid, 'wait_ticket_no', {})
+    await wa.sendMessage(jid,
+      `🎫 *Cek Status Pengaduan*\n\n` +
+      `Kirimkan *nomor tiket* Anda.\n` +
+      `Contoh: \`TKT-0001\`\n\n` +
+      `_Ketik *batal* untuk membatalkan._`
+    )
+    return
+  }
+
+  // Nomor tiket langsung (format TKT-xxxx)
+  if (/^tkt-\d+$/i.test(lower)) {
+    const ticket = db.prepare(`
+      SELECT t.*, c.name as cust_name
+      FROM tickets t LEFT JOIN customers c ON c.id = t.cust_id
+      WHERE LOWER(t.ticket_no) = LOWER(?)
+    `).get(text.trim())
+    await sendTicketStatus(jid, ticket, wa)
     return
   }
 
@@ -78,6 +103,7 @@ async function handleMessage(jid, _phone, rawText, deps) {
   if (sess?.state === 'wait_complaint_cat')     return handleWaitComplaintCat(jid, text, lower, sess, deps)
   if (sess?.state === 'wait_complaint_desc')    return handleWaitComplaintDesc(jid, text, sess, deps)
   if (sess?.state === 'wait_complaint_confirm') return handleWaitComplaintConfirm(jid, lower, sess, deps)
+  if (sess?.state === 'wait_ticket_no')         return handleWaitTicketNo(jid, text, deps)
 
   // ── Cari pelanggan by JID ──
   const cust = findCustomerByJid(db, jid)
@@ -217,6 +243,7 @@ async function handleIdle(jid, lower, cust, { db, wa }) {
     `Ketik *catat* untuk catat meter\n` +
     `Ketik *tagihan* untuk cek tagihan\n` +
     `Ketik *aduan* untuk laporkan keluhan\n` +
+    `Ketik *tiket* untuk cek status pengaduan\n` +
     `Ketik *bantuan* untuk daftar perintah`
   )
 }
@@ -346,6 +373,45 @@ async function handleWaitConfirm(jid, lower, sess, { db, wa, getSettings, calcDu
       `Silakan coba lagi atau hubungi kantor.`
     )
   }
+}
+
+// ─── Tiket status helper ───
+const TICKET_STATUS_LABEL = {
+  open:        '🟡 Baru — menunggu penanganan',
+  in_progress: '🔵 Sedang ditangani',
+  resolved:    '✅ Selesai ditangani',
+  closed:      '⚪ Tiket ditutup',
+}
+
+async function sendTicketStatus(jid, ticket, wa) {
+  if (!ticket) {
+    await wa.sendMessage(jid,
+      `⚠️ Nomor tiket tidak ditemukan.\n\n` +
+      `Pastikan format benar, contoh: \`TKT-0001\``
+    )
+    return
+  }
+  const lines = [
+    `🎫 *Status Pengaduan ${ticket.ticket_no}*\n`,
+    `• Kategori  : ${ticket.category}`,
+    `• Status    : ${TICKET_STATUS_LABEL[ticket.status] || ticket.status}`,
+    `• Prioritas : ${ticket.priority === 'critical' ? '🔴 Kritis' : ticket.priority === 'high' ? '🟠 Tinggi' : ticket.priority === 'medium' ? '🟡 Sedang' : '⚪ Rendah'}`,
+    ticket.assigned_to ? `• Ditangani : ${ticket.assigned_to}` : null,
+    `• Dibuat    : ${formatDate(ticket.created_at)}`,
+    ticket.resolved_at ? `• Selesai   : ${formatDate(ticket.resolved_at)}` : null,
+  ].filter(Boolean).join('\n')
+  await wa.sendMessage(jid, lines)
+}
+
+// ─── STATE: wait_ticket_no ───
+async function handleWaitTicketNo(jid, text, { db, wa }) {
+  clearSession(jid)
+  const ticket = db.prepare(`
+    SELECT t.*, c.name as cust_name
+    FROM tickets t LEFT JOIN customers c ON c.id = t.cust_id
+    WHERE LOWER(t.ticket_no) = LOWER(?)
+  `).get(text.trim())
+  await sendTicketStatus(jid, ticket, wa)
 }
 
 // ─── STATE: wait_complaint_cat ───

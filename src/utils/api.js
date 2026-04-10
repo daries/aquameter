@@ -140,4 +140,13 @@ export const ticketCategoryAPI = {
   remove:  (id)        => api.delete(`/ticket-categories/${id}`),
 }
 
+// ─── Ticket Statuses (master data) ───
+export const ticketStatusAPI = {
+  getAll:  ()          => api.get('/ticket-statuses'),
+  create:  (data)      => api.post('/ticket-statuses', data),
+  update:  (id, data)  => api.put(`/ticket-statuses/${id}`, data),
+  remove:  (id)        => api.delete(`/ticket-statuses/${id}`),
+  meta:    ()          => api.get('/tickets/meta/statuses'),
+}
+
 export default api

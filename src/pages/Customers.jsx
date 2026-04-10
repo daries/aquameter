@@ -118,7 +118,7 @@ export default function Customers() {
       <div className="group-summary" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 10, marginBottom: 16 }}>
         {groupCounts.map(({ g, count }) => (
           <Card key={g} style={{ padding: '12px 14px', textAlign: 'center' }}>
-            <div style={{ fontSize: 20, fontWeight: 800, fontFamily: 'Syne,sans-serif', color: 'var(--ocean)' }}>{count}</div>
+            <div style={{ fontSize: 20, fontWeight: 800, fontFamily: 'Outfit,sans-serif', color: 'var(--ocean)' }}>{count}</div>
             <div style={{ fontSize: 12, color: 'var(--text-sec)' }}>{g}</div>
           </Card>
         ))}

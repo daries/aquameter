@@ -13,6 +13,7 @@ import Cashbook from './pages/Cashbook'
 import Users from './pages/Users'
 import Installations from './pages/Installations'
 import Tickets from './pages/Tickets'
+import MasterTicket from './pages/MasterTicket'
 import Settings from './pages/Settings'
 import './styles/components.css'
 
@@ -39,7 +40,8 @@ export default function App() {
                 <Route path="/cashbook"  element={<Cashbook />} />
                 <Route path="/users"         element={<Users />} />
                 <Route path="/installations" element={<Installations />} />
-                <Route path="/tickets"       element={<Tickets />} />
+                <Route path="/tickets"        element={<Tickets />} />
+                <Route path="/master-ticket" element={<MasterTicket />} />
                 <Route path="/settings"      element={<Settings />} />
               </Routes>
             </Layout>
