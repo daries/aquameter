@@ -8,3 +8,5 @@ dist/
 *.log
 coverage/
 .vite/
+server/.wa_auth/
+.htaccess
