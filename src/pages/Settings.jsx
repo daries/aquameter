@@ -60,6 +60,7 @@ export default function Settings() {
         waTemplateInstallDone:    data.waTemplateInstallDone    || '',
         installFee:               data.installFee               || '500000',
         installAdminFee:          data.installAdminFee          || '50000',
+        thermalPaperWidth:        data.thermalPaperWidth        || '58',
       }))
       .catch(e => showToast(e.message, 'error'))
       .finally(() => setLoading(false))
@@ -183,7 +184,7 @@ export default function Settings() {
         </Card>
       </div>
 
-      {/* ── Pasang Baru ── */}
+      {/* ── Pasang Baru + Printer Thermal ── */}
       <Card>
         <div className="card-title" style={{ marginBottom: 16 }}>🔧 Biaya Pasang Baru</div>
         <div className="form-grid">
@@ -200,6 +201,61 @@ export default function Settings() {
             onClick={() => save('pasang baru', ['installFee','installAdminFee'])}
             disabled={saving === 'pasang baru'}>
             {saving === 'pasang baru' ? 'Menyimpan...' : 'Simpan'}
+          </Button>
+        )}
+      </Card>
+
+      {/* ── Printer Thermal ── */}
+      <Card>
+        <div className="card-title" style={{ marginBottom: 4 }}>🖨️ Printer Thermal</div>
+        <div style={{ fontSize: 12, color: 'var(--text-sec)', marginBottom: 16 }}>
+          Pengaturan untuk cetak struk tagihan ke printer Bluetooth portabel.
+          Pasangkan printer ke HP via Bluetooth di pengaturan HP terlebih dahulu.
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <div>
+            <label className="form-label" style={{ marginBottom: 6 }}>Lebar Kertas Thermal</label>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {[
+                { val: '58', label: '58mm', desc: '~32 karakter/baris' },
+                { val: '80', label: '80mm', desc: '~42 karakter/baris' },
+              ].map(opt => (
+                <button
+                  key={opt.val}
+                  onClick={() => isAdmin && setForm(f => ({ ...f, thermalPaperWidth: opt.val }))}
+                  style={{
+                    padding: '10px 20px',
+                    borderRadius: 10,
+                    border: '2px solid',
+                    borderColor: form.thermalPaperWidth === opt.val ? 'var(--ocean)' : 'var(--border)',
+                    background: form.thermalPaperWidth === opt.val ? 'var(--ocean-pale)' : 'var(--surface-2)',
+                    cursor: isAdmin ? 'pointer' : 'default',
+                    textAlign: 'center',
+                    minWidth: 90,
+                  }}
+                >
+                  <div style={{ fontFamily: 'Outfit,sans-serif', fontWeight: 700, fontSize: 15, color: form.thermalPaperWidth === opt.val ? 'var(--ocean)' : 'var(--text)' }}>{opt.label}</div>
+                  <div style={{ fontSize: 10, color: 'var(--text-hint)', marginTop: 2 }}>{opt.desc}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div style={{ flex: 1, minWidth: 220 }}>
+            <div style={{ fontSize: 11, color: 'var(--text-hint)', background: 'var(--bg-alt)', borderRadius: 8, padding: '10px 12px', fontFamily: 'JetBrains Mono, monospace', whiteSpace: 'pre', lineHeight: 1.4 }}>
+              {form.thermalPaperWidth === '80'
+                ? '==========================================\n    NAMA PERUSAHAAN (80mm)\n==========================================\nNo.Invoice    INV-2026-0001\nTOTAL         Rp 75.000\n=========================================='
+                : '================================\n   NAMA PERUSAHAAN (58mm)\n================================\nNo.Invoice   INV-2026-0001\nTOTAL        Rp 75.000\n================================'}
+            </div>
+          </div>
+        </div>
+        {isAdmin && (
+          <Button
+            variant="primary"
+            style={{ marginTop: 14 }}
+            onClick={() => save('printer', ['thermalPaperWidth'])}
+            disabled={saving === 'printer'}
+          >
+            {saving === 'printer' ? 'Menyimpan...' : 'Simpan'}
           </Button>
         )}
       </Card>
@@ -399,12 +455,12 @@ export default function Settings() {
       <div className="grid-3">
         <Card style={{ background: 'var(--ocean)', color: '#fff', border: 'none' }}>
           <div style={{ fontSize: 24, marginBottom: 8 }}>📱</div>
-          <div style={{ fontFamily: 'Syne,sans-serif', fontWeight: 700, marginBottom: 4 }}>PWA Ready</div>
+          <div style={{ fontFamily: 'Outfit,sans-serif', fontWeight: 700, marginBottom: 4 }}>PWA Ready</div>
           <div style={{ fontSize: 12, opacity: 0.7 }}>Install sebagai aplikasi di perangkat melalui menu browser → "Add to Home Screen"</div>
         </Card>
         <Card>
           <div style={{ fontSize: 24, marginBottom: 8 }}>👤</div>
-          <div style={{ fontFamily: 'Syne,sans-serif', fontWeight: 700, marginBottom: 4 }}>Sesi Aktif</div>
+          <div style={{ fontFamily: 'Outfit,sans-serif', fontWeight: 700, marginBottom: 4 }}>Sesi Aktif</div>
           <div style={{ fontSize: 13, color: 'var(--text-sec)', marginBottom: 8 }}>
             <b>{user?.fullName}</b><br />
             Role: <span style={{ textTransform: 'uppercase', fontWeight: 600 }}>{user?.role}</span>
@@ -415,7 +471,7 @@ export default function Settings() {
         </Card>
         <Card>
           <div style={{ fontSize: 24, marginBottom: 8 }}>ℹ️</div>
-          <div style={{ fontFamily: 'Syne,sans-serif', fontWeight: 700, marginBottom: 4 }}>Versi Aplikasi</div>
+          <div style={{ fontFamily: 'Outfit,sans-serif', fontWeight: 700, marginBottom: 4 }}>Versi Aplikasi</div>
           <div style={{ fontSize: 12, color: 'var(--text-sec)' }}>
             <b>PAMSIMAS v2.0</b><br />
             Backend: Node.js + SQLite<br />

@@ -498,7 +498,9 @@ export default function Meters() {
                     <div className="input-group">
                       <input
                         type="number"
-                        className={`form-input mono ${standError ? 'error' : ''}`}
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        className={`form-input mono stand-input-lg ${standError ? 'error' : ''}`}
                         value={currentStand}
                         onChange={e => { setCurrentStand(e.target.value); setStandError('') }}
                         placeholder={String(customer.lastStand + 1)}
@@ -560,7 +562,8 @@ export default function Meters() {
                 </div>
 
                 <div style={{ display: 'flex', gap: 10 }}>
-                  <Button variant="primary" onClick={handleSave} full icon="💾" disabled={saving}>
+                  <Button variant="primary" onClick={handleSave} full icon="💾" disabled={saving}
+                    className="btn-save-meter">
                     {saving ? 'Menyimpan...' : 'Simpan & Buat Tagihan'}
                   </Button>
                   <Button variant="ghost" onClick={resetForm}>Reset</Button>
@@ -584,9 +587,9 @@ export default function Meters() {
                 <thead>
                   <tr>
                     <th>Pelanggan</th>
-                    <th>Tgl Baca</th>
-                    <th>Stand Lama</th>
-                    <th>Stand Baru</th>
+                    <th className="hide-mobile">Tgl Baca</th>
+                    <th className="hide-mobile">Stand Lama</th>
+                    <th className="hide-mobile">Stand Baru</th>
                     <th>Pakai</th>
                     <th>Status</th>
                     <th>Foto</th>
@@ -610,11 +613,11 @@ export default function Meters() {
                           <b style={{ fontSize: 12 }}>{c?.name || r.custName || '—'}</b>
                           <br /><span style={{ fontSize: 10, color: 'var(--text-hint)' }}>{c?.meter || r.meter}</span>
                         </td>
-                        <td style={{ fontSize: 11, color: 'var(--text-sec)', whiteSpace: 'nowrap' }}>
+                        <td className="hide-mobile" style={{ fontSize: 11, color: 'var(--text-sec)', whiteSpace: 'nowrap' }}>
                           {r.date ? new Date(r.date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: '2-digit' }) : '—'}
                         </td>
-                        <td className="mono" style={{ fontSize: 12 }}>{r.lastStand}</td>
-                        <td className="mono" style={{ fontSize: 12 }}>{r.currentStand}</td>
+                        <td className="mono hide-mobile" style={{ fontSize: 12 }}>{r.lastStand}</td>
+                        <td className="mono hide-mobile" style={{ fontSize: 12 }}>{r.currentStand}</td>
                         <td className="mono"><b>{r.usage}</b></td>
                         <td>
                           {r.billStatus ? (

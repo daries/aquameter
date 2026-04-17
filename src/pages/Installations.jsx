@@ -175,10 +175,12 @@ export default function Installations() {
   // Progress bar width
   const stepIdx = (status) => ['pending','invoiced','paid','installed'].indexOf(status)
 
+  const isMobile = window.innerWidth <= 768
+
   return (
     <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
       {/* ── Left: list ── */}
-      <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{ flex: 1, minWidth: 0, display: isMobile && selected ? 'none' : undefined }}>
         <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
           <div style={{ flex: 1 }}>
             <SearchInput value={search} onChange={setSearch} placeholder="Cari nama, HP, invoice..." />
@@ -205,7 +207,7 @@ export default function Installations() {
                     <th className="hide-mobile">Invoice</th>
                     <th className="hide-mobile">Total</th>
                     <th>Status</th>
-                    <th>Tgl Daftar</th>
+                    <th className="hide-mobile">Tgl Daftar</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -224,7 +226,7 @@ export default function Installations() {
                           {inst.totalFee ? fmtRupiah(inst.totalFee) : '—'}
                         </td>
                         <td><Badge variant={sl.variant}>{sl.text}</Badge></td>
-                        <td style={{ fontSize: 12, whiteSpace: 'nowrap' }}>{fmtDate(inst.createdAt?.split(' ')[0])}</td>
+                        <td className="hide-mobile" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>{fmtDate(inst.createdAt?.split(' ')[0])}</td>
                         <td onClick={e => e.stopPropagation()}>
                           {isAdmin && inst.status !== 'installed' && inst.status !== 'cancelled' && (
                             <Button variant="danger" size="sm" onClick={() => setConfirmCancel(inst)}>✕</Button>
@@ -242,7 +244,16 @@ export default function Installations() {
 
       {/* ── Right: detail panel ── */}
       {selected && (
-        <div style={{ width: 320, flexShrink: 0 }}>
+        <div style={{ width: isMobile ? '100%' : 320, flexShrink: 0 }}>
+          {isMobile && (
+            <button
+              onClick={() => setSelected(null)}
+              className="btn btn-ghost btn-sm"
+              style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}
+            >
+              ← Kembali ke daftar
+            </button>
+          )}
           <Card>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <div className="card-title">Detail Pendaftaran</div>
@@ -328,7 +339,7 @@ export default function Installations() {
             <Card style={{ marginTop: 12 }}>
               <div className="card-title" style={{ marginBottom: 12 }}>🧾 Invoice Pasang Baru</div>
               <div style={{ textAlign: 'center', marginBottom: 12 }}>
-                <div style={{ fontFamily: 'Syne,sans-serif', fontWeight: 800, fontSize: 16 }}>{settings.companyName}</div>
+                <div style={{ fontFamily: 'Outfit,sans-serif', fontWeight: 800, fontSize: 16 }}>{settings.companyName}</div>
                 <div style={{ fontSize: 11, color: 'var(--text-hint)' }}>{settings.companyAddress}</div>
               </div>
               <div style={{ borderTop: '1px dashed var(--border)', borderBottom: '1px dashed var(--border)', padding: '10px 0', marginBottom: 8 }}>

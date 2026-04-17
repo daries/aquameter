@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useStore } from '../store'
-import { billAPI } from '../utils/api'
+import { billAPI, settingsAPI } from '../utils/api'
 import { Card, Badge, Button, Tabs, SearchInput, EmptyState } from '../components/UI'
 import { InvoiceModal } from '../components/InvoiceModal'
 import { fmtRupiah, fmtShort, fmtDateShort, getBillStatus } from '../utils/tariff'
@@ -8,6 +8,7 @@ import { fmtRupiah, fmtShort, fmtDateShort, getBillStatus } from '../utils/tarif
 export default function Billing() {
   const { showToast } = useStore()
   const [bills, setBills]           = useState([])
+  const [settings, setSettings]     = useState({})
   const [loading, setLoading]       = useState(true)
   const [tab, setTab]               = useState('all')
   const [search, setSearch]         = useState('')
@@ -17,8 +18,9 @@ export default function Billing() {
 
   const loadBills = async () => {
     try {
-      const data = await billAPI.getAll({ limit: 500 })
+      const [data, sett] = await Promise.all([billAPI.getAll({ limit: 500 }), settingsAPI.get()])
       setBills(data)
+      setSettings(sett)
     } catch (e) {
       showToast(e.message, 'error')
     } finally {
@@ -36,6 +38,18 @@ export default function Billing() {
     try {
       await billAPI.markPaid(b.id)
       showToast('Tagihan ' + b.invoiceNo + ' lunas!')
+      setSelectedBill(null)
+      await loadBills()
+    } catch (e) {
+      showToast(e.message, 'error')
+    }
+  }
+
+  const handleMarkUnpaid = async (b) => {
+    try {
+      await billAPI.markUnpaid(b.id)
+      showToast('Status tagihan direset')
+      setSelectedBill(null)
       await loadBills()
     } catch (e) {
       showToast(e.message, 'error')
@@ -67,15 +81,15 @@ export default function Billing() {
       <div className="stats-grid" style={{ marginBottom: 20 }}>
         <Card style={{ padding: '14px 16px', background: 'var(--ocean)', color: '#fff', border: 'none' }}>
           <div style={{ fontSize: 11, opacity: 0.7 }}>Total Tagihan (filter aktif)</div>
-          <div style={{ fontFamily: 'Syne,sans-serif', fontSize: 22, fontWeight: 800, marginTop: 4 }}>{fmtShort(totalAmount)}</div>
+          <div style={{ fontFamily: 'Outfit,sans-serif', fontSize: 22, fontWeight: 800, marginTop: 4 }}>{fmtShort(totalAmount)}</div>
         </Card>
         <Card style={{ padding: '14px 16px' }}>
           <div style={{ fontSize: 11, color: 'var(--text-hint)' }}>Sudah Terbayar</div>
-          <div style={{ fontFamily: 'Syne,sans-serif', fontSize: 22, fontWeight: 800, color: 'var(--mint)', marginTop: 4 }}>{fmtShort(totalPaid)}</div>
+          <div style={{ fontFamily: 'Outfit,sans-serif', fontSize: 22, fontWeight: 800, color: 'var(--mint)', marginTop: 4 }}>{fmtShort(totalPaid)}</div>
         </Card>
         <Card style={{ padding: '14px 16px' }}>
           <div style={{ fontSize: 11, color: 'var(--text-hint)' }}>Piutang</div>
-          <div style={{ fontFamily: 'Syne,sans-serif', fontSize: 22, fontWeight: 800, color: 'var(--danger)', marginTop: 4 }}>{fmtShort(totalAmount - totalPaid)}</div>
+          <div style={{ fontFamily: 'Outfit,sans-serif', fontSize: 22, fontWeight: 800, color: 'var(--danger)', marginTop: 4 }}>{fmtShort(totalAmount - totalPaid)}</div>
         </Card>
       </div>
 
@@ -150,7 +164,14 @@ export default function Billing() {
         )}
       </Card>
 
-      <InvoiceModal open={!!selectedBill} onClose={() => setSelectedBill(null)} bill={selectedBill} />
+      <InvoiceModal
+        open={!!selectedBill}
+        onClose={() => setSelectedBill(null)}
+        bill={selectedBill}
+        settingsData={settings}
+        onMarkPaid={handleMarkPaid}
+        onMarkUnpaid={handleMarkUnpaid}
+      />
 
       {/* Photo preview modal */}
       {photoPreview && (

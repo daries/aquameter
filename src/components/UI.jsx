@@ -123,7 +123,7 @@ export function EmptyState({ icon = '📭', title, description, action }) {
   return (
     <div style={{ textAlign: 'center', padding: '48px 24px', color: 'var(--text-hint)' }}>
       <div style={{ fontSize: 48, marginBottom: 12 }}>{icon}</div>
-      <div style={{ fontFamily: 'Syne,sans-serif', fontWeight: 700, fontSize: 16, color: 'var(--text-sec)', marginBottom: 6 }}>{title}</div>
+      <div style={{ fontFamily: 'Outfit,sans-serif', fontWeight: 700, fontSize: 16, color: 'var(--text-sec)', marginBottom: 6 }}>{title}</div>
       {description && <div style={{ fontSize: 13 }}>{description}</div>}
       {action && <div style={{ marginTop: 16 }}>{action}</div>}
     </div>

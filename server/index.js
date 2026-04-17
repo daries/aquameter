@@ -185,6 +185,31 @@ try {
 
 try {
   db.exec(`
+    CREATE TABLE IF NOT EXISTS ticket_statuses (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      key        TEXT    NOT NULL UNIQUE,
+      label      TEXT    NOT NULL,
+      variant    TEXT    NOT NULL DEFAULT 'gray',
+      next_keys  TEXT    NOT NULL DEFAULT '[]',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      is_default INTEGER NOT NULL DEFAULT 0,
+      is_active  INTEGER NOT NULL DEFAULT 1
+    )
+  `)
+} catch (e) {}
+
+// Seed default ticket statuses jika kosong
+const tsCount = db.prepare('SELECT COUNT(*) as n FROM ticket_statuses').get()
+if (tsCount.n === 0) {
+  const insTS = db.prepare('INSERT OR IGNORE INTO ticket_statuses (key,label,variant,next_keys,sort_order,is_default) VALUES (?,?,?,?,?,1)')
+  insTS.run('open',        'Baru',       'warning', JSON.stringify(['in_progress','closed']),        0)
+  insTS.run('in_progress', 'Dikerjakan', 'info',    JSON.stringify(['resolved','open']),             1)
+  insTS.run('resolved',    'Selesai',    'success', JSON.stringify(['closed','in_progress']),        2)
+  insTS.run('closed',      'Ditutup',    'gray',    JSON.stringify([]),                              3)
+}
+
+try {
+  db.exec(`
     CREATE TABLE IF NOT EXISTS ticket_categories (
       id        INTEGER PRIMARY KEY AUTOINCREMENT,
       name      TEXT    NOT NULL UNIQUE,
@@ -214,8 +239,7 @@ try {
       description   TEXT    NOT NULL,
       priority      TEXT    NOT NULL DEFAULT 'medium'
                     CHECK(priority IN ('low','medium','high','critical')),
-      status        TEXT    NOT NULL DEFAULT 'open'
-                    CHECK(status IN ('open','in_progress','resolved','closed')),
+      status        TEXT    NOT NULL DEFAULT 'open',
       assigned_to   TEXT,
       notes         TEXT,
       created_at    TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
@@ -233,6 +257,42 @@ try {
   `)
 } catch (e) {}
 
+// Migration: hapus CHECK constraint status di tabel tickets agar status bisa dinamis
+try {
+  const ticketTableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='tickets'").get()
+  if (ticketTableSql?.sql?.includes("CHECK(status IN")) {
+    db.exec(`
+      PRAGMA foreign_keys=OFF;
+      BEGIN;
+      CREATE TABLE tickets_new (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        ticket_no     TEXT    NOT NULL UNIQUE,
+        cust_id       INTEGER REFERENCES customers(id),
+        reporter_name TEXT    NOT NULL,
+        reporter_phone TEXT,
+        category      TEXT    NOT NULL DEFAULT 'Lain-lain',
+        description   TEXT    NOT NULL,
+        priority      TEXT    NOT NULL DEFAULT 'medium'
+                      CHECK(priority IN ('low','medium','high','critical')),
+        status        TEXT    NOT NULL DEFAULT 'open',
+        assigned_to   TEXT,
+        notes         TEXT,
+        created_at    TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
+        updated_at    TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
+        resolved_at   TEXT
+      );
+      INSERT INTO tickets_new SELECT
+        id,ticket_no,cust_id,reporter_name,reporter_phone,category,
+        description,priority,status,assigned_to,notes,created_at,updated_at,resolved_at
+      FROM tickets;
+      DROP TABLE tickets;
+      ALTER TABLE tickets_new RENAME TO tickets;
+      COMMIT;
+      PRAGMA foreign_keys=ON;
+    `)
+  }
+} catch(e) { console.error('Migration tickets CHECK constraint:', e.message) }
+
 // Ensure all required settings exist (safe for existing DBs)
 ;[
   ['adminFee',   '5000'],
@@ -244,6 +304,7 @@ try {
   // Pasang baru
   ['installFee',  '500000'],
   ['installAdminFee', '50000'],
+  ['thermalPaperWidth', '58'],
   // WhatsApp notification settings
   ['waEnabled',          'false'],
   ['waTemplateReading',  'Yth. {nama},\n\nPembacaan meteran bulan {bulan} telah dicatat:\n• Meter Awal : {meter_awal} m³\n• Meter Akhir: {meter_akhir} m³\n• Pemakaian  : {pemakaian} m³\n• Tagihan    : Rp {tagihan}\n• Jatuh Tempo: {jatuh_tempo}\n\nMohon segera lunasi sebelum jatuh tempo.\n\n_{nama_perusahaan}_'],
@@ -1049,6 +1110,54 @@ app.get('/api/whatsapp/status', requireAuth, (_req, res) => {
   res.json(wa.getStatus())
 })
 
+// ─── Ticket Statuses ───
+router.get('/ticket-statuses', requireAuth, (_req, res) => {
+  const rows = db.prepare('SELECT * FROM ticket_statuses ORDER BY sort_order, id').all()
+  res.json(rows.map(r => ({ ...r, next_keys: JSON.parse(r.next_keys || '[]') })))
+})
+
+router.post('/ticket-statuses', requireAuth, requireAdmin, (req, res) => {
+  const { key, label, variant = 'gray', next_keys = [], sort_order = 99 } = req.body
+  if (!key?.trim() || !label?.trim()) return res.status(400).json({ error: 'Key dan label wajib diisi' })
+  const slug = key.trim().toLowerCase().replace(/\s+/g, '_')
+  try {
+    const r = db.prepare(
+      'INSERT INTO ticket_statuses (key,label,variant,next_keys,sort_order) VALUES (?,?,?,?,?)'
+    ).run(slug, label.trim(), variant, JSON.stringify(next_keys), sort_order)
+    const row = db.prepare('SELECT * FROM ticket_statuses WHERE id=?').get(r.lastInsertRowid)
+    res.status(201).json({ ...row, next_keys: JSON.parse(row.next_keys) })
+  } catch (e) {
+    if (e.message.includes('UNIQUE')) return res.status(409).json({ error: 'Key status sudah ada' })
+    res.status(500).json({ error: e.message })
+  }
+})
+
+router.put('/ticket-statuses/:id', requireAuth, requireAdmin, (req, res) => {
+  const { label, variant, next_keys, sort_order, is_active } = req.body
+  const row = db.prepare('SELECT * FROM ticket_statuses WHERE id=?').get(req.params.id)
+  if (!row) return res.status(404).json({ error: 'Status tidak ditemukan' })
+  try {
+    db.prepare(`UPDATE ticket_statuses SET label=?,variant=?,next_keys=?,sort_order=?,is_active=? WHERE id=?`).run(
+      label ?? row.label,
+      variant ?? row.variant,
+      next_keys !== undefined ? JSON.stringify(next_keys) : row.next_keys,
+      sort_order ?? row.sort_order,
+      is_active ?? row.is_active,
+      row.id
+    )
+    const updated = db.prepare('SELECT * FROM ticket_statuses WHERE id=?').get(row.id)
+    res.json({ ...updated, next_keys: JSON.parse(updated.next_keys) })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+router.delete('/ticket-statuses/:id', requireAuth, requireAdmin, (req, res) => {
+  const row = db.prepare('SELECT * FROM ticket_statuses WHERE id=?').get(req.params.id)
+  if (!row) return res.status(404).json({ error: 'Status tidak ditemukan' })
+  if (row.is_default) return res.status(400).json({ error: 'Status default tidak dapat dihapus' })
+  db.prepare('DELETE FROM ticket_statuses WHERE id=?').run(row.id)
+  res.json({ success: true })
+})
+
 // ─── Ticket Categories ───
 router.get('/ticket-categories', requireAuth, (_req, res) => {
   res.json(db.prepare('SELECT * FROM ticket_categories ORDER BY id').all())
@@ -1203,6 +1312,11 @@ router.delete('/tickets/:id', requireAuth, requireAdmin, (req, res) => {
 router.get('/tickets/meta/categories', requireAuth, (_req, res) => {
   const rows = db.prepare("SELECT name FROM ticket_categories WHERE is_active=1 ORDER BY id").all()
   res.json(rows.map(r => r.name))
+})
+
+router.get('/tickets/meta/statuses', requireAuth, (_req, res) => {
+  const rows = db.prepare("SELECT * FROM ticket_statuses WHERE is_active=1 ORDER BY sort_order, id").all()
+  res.json(rows.map(r => ({ ...r, next_keys: JSON.parse(r.next_keys || '[]') })))
 })
 
 app.post('/api/whatsapp/connect', requireAuth, requireAdmin, async (_req, res) => {

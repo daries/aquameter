@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useStore } from '../store'
-import { ticketAPI, ticketCategoryAPI, customerAPI } from '../utils/api'
+import { getUser } from '../utils/auth'
+import { ticketAPI, ticketCategoryAPI, ticketStatusAPI, customerAPI } from '../utils/api'
 import {
   Card, Badge, Button, Tabs, SearchInput, EmptyState,
   Modal, FormInput, FormSelect, ConfirmDialog,
@@ -8,35 +9,49 @@ import {
 
 const PRIORITY_LABEL   = { low: 'Rendah', medium: 'Sedang', high: 'Tinggi', critical: 'Kritis' }
 const PRIORITY_VARIANT = { low: 'gray', medium: 'warning', high: 'danger', critical: 'danger' }
-const STATUS_LABEL     = { open: 'Baru', in_progress: 'Dikerjakan', resolved: 'Selesai', closed: 'Ditutup' }
-const STATUS_VARIANT   = { open: 'warning', in_progress: 'info', resolved: 'success', closed: 'gray' }
-const STATUS_NEXT      = {
-  open:        [{ value: 'in_progress', label: '▶ Kerjakan' }],
-  in_progress: [{ value: 'resolved', label: '✅ Tandai Selesai' }, { value: 'open', label: '↩ Buka Kembali' }],
-  resolved:    [{ value: 'closed', label: '🔒 Tutup Tiket' }, { value: 'in_progress', label: '↩ Kerjakan Lagi' }],
-  closed:      [],
+
+// Fallback statis jika statuses belum dimuat
+const FALLBACK_STATUS_LABEL   = { open: 'Baru', in_progress: 'Dikerjakan', resolved: 'Selesai', closed: 'Ditutup' }
+const FALLBACK_STATUS_VARIANT = { open: 'warning', in_progress: 'info', resolved: 'success', closed: 'gray' }
+
+function buildStatusMaps(statuses) {
+  const label   = {}
+  const variant = {}
+  const next    = {}
+  statuses.forEach(s => {
+    label[s.key]   = s.label
+    variant[s.key] = s.variant
+    next[s.key]    = (s.next_keys || []).map(k => ({
+      value: k,
+      label: statuses.find(x => x.key === k)?.label || k,
+    }))
+  })
+  return { label, variant, next }
 }
 
 export default function Tickets() {
-  const { showToast, user } = useStore()
+  const { showToast } = useStore()
+  const user = getUser()
   const [tickets, setTickets]         = useState([])
+  const [statuses, setStatuses]       = useState([])
   const [loading, setLoading]         = useState(true)
-  const [tab, setTab]                 = useState('open')
+  const [tab, setTab]                 = useState('all')
   const [search, setSearch]           = useState('')
   const [selected, setSelected]       = useState(null)
   const [detail, setDetail]           = useState(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
-  const [formOpen, setFormOpen]       = useState(false)
-  const [editOpen, setEditOpen]       = useState(false)
-  const [statusModal, setStatusModal] = useState(false)
-  const [catOpen, setCatOpen]         = useState(false)
+  const [formOpen, setFormOpen]           = useState(false)
+  const [editOpen, setEditOpen]           = useState(false)
+  const [statusModal, setStatusModal]     = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
+  const [catOpen, setCatOpen]             = useState(false)
   const loadedRef = useRef(false)
 
   const load = async () => {
     try {
-      const t = await ticketAPI.getAll()
+      const [t, s] = await Promise.all([ticketAPI.getAll(), ticketStatusAPI.meta()])
       setTickets(t)
+      setStatuses(s)
     } catch (e) {
       showToast(e.message, 'error')
     } finally {
@@ -77,12 +92,17 @@ export default function Tickets() {
     }
   }
 
+  // Build label/variant/next maps dari DB statuses
+  const sm = buildStatusMaps(statuses)
+  const statusLabel   = k => sm.label[k]   ?? FALLBACK_STATUS_LABEL[k]   ?? k
+  const statusVariant = k => sm.variant[k] ?? FALLBACK_STATUS_VARIANT[k] ?? 'gray'
+  const statusNext    = k => sm.next[k]    ?? []
+
   const tabs = [
-    { id: 'open',        label: 'Baru',       count: tickets.filter(t => t.status === 'open').length },
-    { id: 'in_progress', label: 'Dikerjakan', count: tickets.filter(t => t.status === 'in_progress').length },
-    { id: 'resolved',    label: 'Selesai',    count: tickets.filter(t => t.status === 'resolved').length },
-    { id: 'closed',      label: 'Ditutup',    count: tickets.filter(t => t.status === 'closed').length },
-    { id: 'all',         label: 'Semua',      count: tickets.length },
+    { id: 'all', label: 'Semua', count: tickets.length },
+    ...statuses.map(s => ({
+      id: s.key, label: s.label, count: tickets.filter(t => t.status === s.key).length
+    })),
   ]
 
   const filtered = tickets.filter(t => {
@@ -95,10 +115,12 @@ export default function Tickets() {
     return matchTab && matchSearch
   })
 
+  const isMobile = window.innerWidth <= 768
+
   return (
     <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
       {/* ── List Panel ── */}
-      <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{ flex: 1, minWidth: 0, display: isMobile && selected ? 'none' : undefined }}>
         <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center' }}>
           <div style={{ flex: 1 }}>
             <SearchInput value={search} onChange={setSearch} placeholder="Cari no. tiket, nama, deskripsi..." />
@@ -132,7 +154,7 @@ export default function Tickets() {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 4 }}>
                     <span style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--text-hint)' }}>{t.ticketNo}</span>
-                    <Badge variant={STATUS_VARIANT[t.status]}>{STATUS_LABEL[t.status]}</Badge>
+                    <Badge variant={statusVariant(t.status)}>{statusLabel(t.status)}</Badge>
                     <Badge variant={PRIORITY_VARIANT[t.priority]}>{PRIORITY_LABEL[t.priority]}</Badge>
                   </div>
                   <div style={{ fontWeight: 600, fontSize: 13 }}>{t.reporterName}
@@ -156,7 +178,16 @@ export default function Tickets() {
 
       {/* ── Detail Panel ── */}
       {selected && (
-        <div style={{ width: 360, flexShrink: 0 }}>
+        <div style={{ width: isMobile ? '100%' : 360, flexShrink: 0 }}>
+          {isMobile && (
+            <button
+              onClick={() => { setSelected(null); setDetail(null) }}
+              className="btn btn-ghost btn-sm"
+              style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}
+            >
+              ← Kembali ke daftar
+            </button>
+          )}
           <Card>
             {loadingDetail ? (
               <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-sec)' }}>Memuat...</div>
@@ -167,7 +198,7 @@ export default function Tickets() {
                   <div>
                     <div style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--text-hint)', marginBottom: 6 }}>{detail.ticketNo}</div>
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                      <Badge variant={STATUS_VARIANT[detail.status]}>{STATUS_LABEL[detail.status]}</Badge>
+                      <Badge variant={statusVariant(detail.status)}>{statusLabel(detail.status)}</Badge>
                       <Badge variant={PRIORITY_VARIANT[detail.priority]}>{PRIORITY_LABEL[detail.priority]}</Badge>
                     </div>
                   </div>
@@ -205,9 +236,9 @@ export default function Tickets() {
                 )}
 
                 {/* Aksi status */}
-                {STATUS_NEXT[detail.status]?.length > 0 && (
+                {statusNext(detail.status).length > 0 && (
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
-                    {STATUS_NEXT[detail.status].map(s => (
+                    {statusNext(detail.status).map(s => (
                       <Button key={s.value} variant="primary" size="sm" onClick={() => setStatusModal(true)}>
                         {s.label}
                       </Button>
@@ -223,7 +254,7 @@ export default function Tickets() {
                       {detail.updates.map(u => (
                         <div key={u.id} style={{ fontSize: 12, borderLeft: '2px solid var(--border)', paddingLeft: 10 }}>
                           <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                            <Badge variant={STATUS_VARIANT[u.status]}>{STATUS_LABEL[u.status]}</Badge>
+                            <Badge variant={statusVariant(u.status)}>{statusLabel(u.status)}</Badge>
                             <span style={{ color: 'var(--text-hint)', fontSize: 11 }}>{fmtDate(u.createdAt)}</span>
                           </div>
                           <div style={{ color: 'var(--text-hint)', fontSize: 11, marginTop: 2 }}>oleh {u.createdBy}</div>
@@ -261,6 +292,7 @@ export default function Tickets() {
         <StatusModal
           open={statusModal}
           ticket={detail}
+          statuses={statuses}
           onClose={() => setStatusModal(false)}
           onSaved={() => { setStatusModal(false); load(); loadDetail(detail.id) }}
           showToast={showToast}
@@ -461,8 +493,9 @@ function EditTicketModal({ open, ticket, onClose, onSaved, showToast }) {
 }
 
 /* ── Ubah Status ── */
-function StatusModal({ open, ticket, onClose, onSaved, showToast }) {
-  const options  = STATUS_NEXT[ticket?.status] || []
+function StatusModal({ open, ticket, statuses, onClose, onSaved, showToast }) {
+  const sm      = buildStatusMaps(statuses || [])
+  const options = sm.next[ticket?.status] || []
   const [status, setStatus] = useState('')
   const [note, setNote]     = useState('')
   const [saving, setSaving] = useState(false)
@@ -476,7 +509,7 @@ function StatusModal({ open, ticket, onClose, onSaved, showToast }) {
     setSaving(true)
     try {
       await ticketAPI.updateStatus(ticket.id, { status, note })
-      showToast(`Status diubah ke "${STATUS_LABEL[status]}"`)
+      showToast(`Status diubah ke "${sm.label[status] ?? status}"`)
       onSaved()
     } catch (err) {
       showToast(err.message, 'error')
@@ -494,7 +527,7 @@ function StatusModal({ open, ticket, onClose, onSaved, showToast }) {
       </div>
       <form onSubmit={handleSubmit}>
         <FormSelect label="Status Baru" value={status} onChange={e => setStatus(e.target.value)}>
-          {options.map(o => <option key={o.value} value={o.value}>{STATUS_LABEL[o.value]}</option>)}
+          {options.map(o => <option key={o.value} value={o.value}>{sm.label[o.value] ?? o.label}</option>)}
         </FormSelect>
         <div className="form-group">
           <label className="form-label">Catatan Tindakan (opsional)</label>

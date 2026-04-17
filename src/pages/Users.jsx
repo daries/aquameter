@@ -45,7 +45,7 @@ export default function Users() {
     return (
       <Card style={{ textAlign: 'center', padding: '48px 24px' }}>
         <div style={{ fontSize: 48, marginBottom: 16 }}>🔒</div>
-        <div style={{ fontFamily: 'Syne,sans-serif', fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Akses Ditolak</div>
+        <div style={{ fontFamily: 'Outfit,sans-serif', fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Akses Ditolak</div>
         <div style={{ color: 'var(--text-sec)', fontSize: 13 }}>
           Halaman ini hanya dapat diakses oleh <b>admin</b>.<br />
           Anda login sebagai <b>{currentUser?.role}</b>.
@@ -135,9 +135,9 @@ export default function Users() {
             <table>
               <thead>
                 <tr>
-                  <th>No.</th>
+                  <th className="hide-mobile">No.</th>
                   <th>Nama Lengkap</th>
-                  <th>Username</th>
+                  <th className="hide-mobile">Username</th>
                   <th>Role</th>
                   <th>Aksi</th>
                 </tr>
@@ -145,7 +145,7 @@ export default function Users() {
               <tbody>
                 {users.map((u, i) => (
                   <tr key={u.id}>
-                    <td style={{ color: 'var(--text-hint)', fontSize: 12 }}>{i + 1}</td>
+                    <td className="hide-mobile" style={{ color: 'var(--text-hint)', fontSize: 12 }}>{i + 1}</td>
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                         <div style={{
@@ -165,7 +165,7 @@ export default function Users() {
                         </div>
                       </div>
                     </td>
-                    <td className="mono" style={{ fontSize: 13 }}>{u.username}</td>
+                    <td className="mono hide-mobile" style={{ fontSize: 13 }}>{u.username}</td>
                     <td>
                       <Badge variant={u.role === 'admin' ? 'info' : 'gray'}>
                         {u.role === 'admin' ? '🔑 ' : '👤 '}{ROLE_LABEL[u.role]}

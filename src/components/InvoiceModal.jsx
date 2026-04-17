@@ -2,24 +2,48 @@ import React from 'react'
 import { Modal, Button, SummaryRow } from './UI'
 import { fmtRupiah, fmtDate, calcWaterCost, getBillStatus, TARIFFS } from '../utils/tariff'
 import { generateInvoicePDF } from '../utils/pdfGenerator'
+import { printReceiptThermal } from '../utils/receiptPrinter'
 import { useStore } from '../store'
 
-export function InvoiceModal({ open, onClose, bill }) {
-  const { customers, settings, markPaid, markUnpaid, showToast } = useStore()
+export function InvoiceModal({ open, onClose, bill, onMarkPaid, onMarkUnpaid, settingsData }) {
+  const { customers, settings: storeSettings, markPaid, markUnpaid, showToast } = useStore()
   if (!bill) return null
-  const customer = customers.find(c => c.id === bill.custId) || {}
-  const { blocks } = calcWaterCost(customer.group || 'R1', bill.usage)
+
+  // Support both store-based and API-based customer data
+  const customer = customers.find(c => c.id === bill.custId) || {
+    name:    bill.custName,
+    address: bill.custAddress || '',
+    meter:   bill.meter,
+    group:   bill.group,
+  }
+  // Settings: prefer explicitly passed settingsData (from API), fallback to store
+  const settings = settingsData || storeSettings || {}
+
+  const { blocks } = calcWaterCost(customer.group || bill.group || 'R1', bill.usage)
   const status = getBillStatus(bill)
 
   const handleMarkPaid = () => {
+    if (onMarkPaid) { onMarkPaid(bill); onClose(); return }
     markPaid(bill.id)
     showToast('Tagihan ' + bill.invoiceNo + ' ditandai lunas!')
+    onClose()
+  }
+
+  const handleMarkUnpaid = () => {
+    if (onMarkUnpaid) { onMarkUnpaid(bill); onClose(); return }
+    markUnpaid(bill.id)
+    showToast('Status tagihan direset')
     onClose()
   }
 
   const handlePrint = () => {
     generateInvoicePDF(bill, customer, settings, blocks)
     showToast('PDF invoice berhasil diunduh!')
+  }
+
+  const handlePrintReceipt = () => {
+    printReceiptThermal(bill, customer, settings, blocks)
+    showToast('Membuka dialog cetak struk...')
   }
 
   return (
@@ -98,16 +122,19 @@ export function InvoiceModal({ open, onClose, bill }) {
         </div>
       )}
 
-      <div className="modal-actions">
+      {/* Print buttons row (side by side even on mobile) */}
+      <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+        <Button variant="secondary" onClick={handlePrintReceipt} icon="🖨️" style={{ flex: 1 }}>Cetak Struk</Button>
+        <Button variant="secondary" onClick={handlePrint} icon="📄" style={{ flex: 1 }}>PDF A5</Button>
+      </div>
+
+      <div className="modal-actions" style={{ marginTop: 8 }}>
         <Button variant="ghost" onClick={onClose}>Tutup</Button>
-        <Button variant="secondary" onClick={handlePrint} icon="🖨️">Cetak PDF</Button>
         {bill.status !== 'paid' && (
           <Button variant="primary" onClick={handleMarkPaid} icon="✅">Tandai Lunas</Button>
         )}
         {bill.status === 'paid' && (
-          <Button variant="ghost" onClick={() => { markUnpaid(bill.id); showToast('Status tagihan direset'); onClose() }}>
-            Batal Lunas
-          </Button>
+          <Button variant="ghost" onClick={handleMarkUnpaid}>Batal Lunas</Button>
         )}
       </div>
     </Modal>
