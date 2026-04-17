@@ -9,4 +9,4 @@ dist/
 coverage/
 .vite/
 server/.wa_auth/
-.htaccess
+.htaccessserver/.wa_auth/
