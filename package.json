@@ -7,7 +7,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "server": "node server/index.js",
-    "dev:full": "concurrently \"npm run dev\" \"npm run server\""
+    "dev:full": "concurrently \"npm run dev\" \"npm run server\"",
+    "db:migrate": "node server/migrate.js"
   },
   "dependencies": {
     "@whiskeysockets/baileys": "^6.17.16",
@@ -19,6 +20,8 @@
     "jspdf": "^2.5.1",
     "jspdf-autotable": "^3.8.2",
     "lucide-react": "^0.344.0",
+    "mysql2": "^3.22.0",
+    "pg": "^8.20.0",
     "pino": "^10.3.1",
     "qrcode": "^1.5.4",
     "react": "^18.2.0",
@@ -30,6 +33,7 @@
   "devDependencies": {
     "@types/react": "^18.2.55",
     "@types/react-dom": "^18.2.19",
+    "@vite-pwa/assets-generator": "^0.2.6",
     "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.17",
     "concurrently": "^8.2.2",

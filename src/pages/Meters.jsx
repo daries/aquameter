@@ -128,14 +128,42 @@ function CustomerSearch({ customers, readIds, onSelect }) {
   )
 }
 
+// ─── Compress image ke JPEG dengan resize ───────────────────────────────────
+const MAX_DIM  = 1024  // px — cukup untuk baca angka meter
+const QUALITY  = 0.78  // JPEG 78% — jernih tapi ringan
+
+function compressDataUrl(dataUrl, maxDim = MAX_DIM, quality = QUALITY) {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => {
+      let w = img.width, h = img.height
+      if (w > h) { if (w > maxDim) { h = Math.round(h * maxDim / w); w = maxDim } }
+      else        { if (h > maxDim) { w = Math.round(w * maxDim / h); h = maxDim } }
+      const canvas = document.createElement('canvas')
+      canvas.width = w; canvas.height = h
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h)
+      resolve(canvas.toDataURL('image/jpeg', quality))
+    }
+    img.onerror = () => resolve(dataUrl)   // fallback: kirim asli
+    img.src = dataUrl
+  })
+}
+
+function sizeKb(dataUrl) {
+  // Base64 → estimasi byte: setiap 4 karakter ≈ 3 byte
+  return Math.round((dataUrl.length - dataUrl.indexOf(',') - 1) * 3 / 4 / 1024)
+}
+
 // ─── Camera capture ───
 function CameraCapture({ onCapture }) {
   const videoRef  = useRef(null)
   const canvasRef = useRef(null)
-  const [stream, setStream]     = useState(null)
-  const [photo, setPhoto]       = useState(null)
-  const [camError, setCamError] = useState(null)
-  const [camReady, setCamReady] = useState(false)
+  const [stream,      setStream]      = useState(null)
+  const [photo,       setPhoto]       = useState(null)
+  const [photoInfo,   setPhotoInfo]   = useState(null)   // { kb, origKb }
+  const [camError,    setCamError]    = useState(null)
+  const [camReady,    setCamReady]    = useState(false)
+  const [compressing, setCompressing] = useState(false)
 
   const startCamera = useCallback(async () => {
     setCamError(null); setCamReady(false)
@@ -161,31 +189,56 @@ function CameraCapture({ onCapture }) {
   useEffect(() => { startCamera() }, [])
   useEffect(() => () => { if (stream) stream.getTracks().forEach(t => t.stop()) }, [stream])
 
-  const capturePhoto = () => {
+  const capturePhoto = async () => {
     const video = videoRef.current, canvas = canvasRef.current
-    canvas.width = video.videoWidth || 1280
+    // Gambar ke canvas asli dulu untuk ukuran asli
+    canvas.width  = video.videoWidth  || 1280
     canvas.height = video.videoHeight || 720
     canvas.getContext('2d').drawImage(video, 0, 0)
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.82)
-    setPhoto(dataUrl); stopCamera(); onCapture(dataUrl)
+    const raw = canvas.toDataURL('image/jpeg', 1.0)
+    const origKb = sizeKb(raw)
+
+    setCompressing(true); stopCamera()
+    const compressed = await compressDataUrl(raw)
+    const kb = sizeKb(compressed)
+    setPhoto(compressed); setPhotoInfo({ kb, origKb }); onCapture(compressed)
+    setCompressing(false)
   }
 
-  const retake = () => { setPhoto(null); onCapture(null); startCamera() }
+  const retake = () => { setPhoto(null); setPhotoInfo(null); onCapture(null); startCamera() }
 
-  const handleFileUpload = (e) => {
+  const handleFileUpload = async (e) => {
     const file = e.target.files[0]; if (!file) return
+    const origKb = Math.round(file.size / 1024)
+    setCompressing(true); stopCamera()
+
     const reader = new FileReader()
-    reader.onload = (ev) => { setPhoto(ev.target.result); stopCamera(); onCapture(ev.target.result) }
+    reader.onload = async (ev) => {
+      const compressed = await compressDataUrl(ev.target.result)
+      const kb = sizeKb(compressed)
+      setPhoto(compressed); setPhotoInfo({ kb, origKb }); onCapture(compressed)
+      setCompressing(false)
+    }
     reader.readAsDataURL(file)
   }
 
   return (
     <div className="camera-wrap">
       <canvas ref={canvasRef} style={{ display: 'none' }} />
+
       {photo ? (
         <div className="camera-preview-wrap">
           <img src={photo} alt="Foto meter" className="camera-preview-img" />
-          <div className="camera-preview-badge">✅ Foto berhasil diambil</div>
+          <div className="camera-preview-badge">
+            ✅ Foto berhasil diambil
+            {photoInfo && (
+              <span style={{ marginLeft: 6, opacity: 0.8, fontWeight: 400 }}>
+                · {photoInfo.origKb > photoInfo.kb
+                  ? `${photoInfo.origKb} KB → ${photoInfo.kb} KB`
+                  : `${photoInfo.kb} KB`}
+              </span>
+            )}
+          </div>
         </div>
       ) : (
         <div className="camera-live-wrap">
@@ -194,17 +247,21 @@ function CameraCapture({ onCapture }) {
             : <video ref={videoRef} autoPlay playsInline muted className="camera-video" style={{ opacity: camReady ? 1 : 0 }} />
           }
           {!camReady && !camError && <div className="camera-loading">📷 Memuat kamera...</div>}
+          {compressing && <div className="camera-loading">🗜️ Mengompres foto...</div>}
         </div>
       )}
+
       <div style={{ display: 'flex', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
         {!photo ? (
           <>
             {!camError && (
-              <Button variant="primary" onClick={capturePhoto} disabled={!camReady} icon="📷">Ambil Foto</Button>
+              <Button variant="primary" onClick={capturePhoto} disabled={!camReady || compressing} icon="📷">
+                {compressing ? 'Memproses...' : 'Ambil Foto'}
+              </Button>
             )}
-            <label className="btn btn-ghost" style={{ cursor: 'pointer' }}>
+            <label className={`btn btn-ghost${compressing ? ' disabled' : ''}`} style={{ cursor: compressing ? 'not-allowed' : 'pointer' }}>
               📁 Upload dari Galeri
-              <input type="file" accept="image/*" capture="environment" onChange={handleFileUpload} style={{ display: 'none' }} />
+              <input type="file" accept="image/*" capture="environment" onChange={handleFileUpload} style={{ display: 'none' }} disabled={compressing} />
             </label>
           </>
         ) : (

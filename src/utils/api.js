@@ -72,6 +72,13 @@ export const settingsAPI = {
   update: (data) => api.put('/settings', data),
 }
 
+export const databaseAPI = {
+  getConfig: ()       => api.get('/database/config'),
+  saveConfig: (data)  => api.put('/database/config', data),
+  test: (data)        => api.post('/database/test', data),
+  migrate: (data)     => api.post('/database/migrate', data),
+}
+
 // ─── Reports ───
 export const reportAPI = {
   monthly: (year) => api.get('/reports/monthly', { params: { year } }),

@@ -1,0 +1,36 @@
+{
+  "activeEngine": "postgres",
+  "profiles": {
+    "sqlite": {
+      "engine": "sqlite",
+      "filename": "/Users/darie/Project/aquameter/server/aquameter.db"
+    },
+    "mysql": {
+      "engine": "mysql",
+      "host": "127.0.0.1",
+      "port": 3306,
+      "user": "",
+      "password": "",
+      "database": "aquameter",
+      "ssl": false
+    },
+    "mariadb": {
+      "engine": "mariadb",
+      "host": "127.0.0.1",
+      "port": 3306,
+      "user": "root",
+      "password": "my-secret-pw",
+      "database": "aquameter",
+      "ssl": false
+    },
+    "postgres": {
+      "engine": "postgres",
+      "host": "127.0.0.1",
+      "port": 5432,
+      "user": "postgres",
+      "password": "mysecretpassword",
+      "database": "postgres",
+      "ssl": false
+    }
+  }
+}

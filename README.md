@@ -15,6 +15,7 @@ Aplikasi web modern berbasis PWA (Progressive Web App) untuk manajemen sistem me
 | **Tagihan** | Daftar tagihan, filter status, invoice PDF, tandai lunas |
 | **Tarif** | Struktur tarif 6 golongan (R1–R3, K1–K2, S1), kalkulator interaktif |
 | **Laporan** | Ringkasan keuangan, laporan bulanan, per pelanggan, export PDF |
+| **Database** | Profil koneksi SQLite/MySQL/PostgreSQL, test koneksi, migrasi data lintas engine |
 | **PWA** | Install di HP/desktop, offline support, shortcut app |
 
 ---
@@ -28,7 +29,10 @@ aquameter/
 │   ├── manifest.webmanifest
 │   └── sw.js            # Service Worker
 ├── server/
-│   └── index.js         # Express API + SQLite (better-sqlite3)
+│   ├── index.js         # Express API + SQLite runtime
+│   ├── dbConfig.js      # Profil koneksi database
+│   ├── dbMigration.js   # Tool migrasi lintas engine
+│   └── migrate.js       # CLI migrasi database
 ├── src/
 │   ├── components/
 │   │   ├── Layout.jsx       # Sidebar + Topbar
@@ -94,6 +98,14 @@ npm run build
 NODE_ENV=production npm run server
 ```
 
+### 6. Migrasi Database
+```bash
+# Gunakan profil di server/db-config.json
+npm run db:migrate -- --from sqlite --to mysql
+```
+
+Profil koneksi juga bisa diatur dari menu `Settings -> Database & Migrasi`.
+
 ---
 
 ## 🏗 Tech Stack
@@ -108,7 +120,8 @@ NODE_ENV=production npm run server
 | Icons | Lucide React |
 | PWA | vite-plugin-pwa + Workbox |
 | Backend | Express.js |
-| Database | SQLite via better-sqlite3 |
+| Database Runtime | SQLite via better-sqlite3 |
+| Database Migration | SQLite, MySQL, PostgreSQL |
 | CSS | Custom CSS Variables (no framework) |
 
 ---

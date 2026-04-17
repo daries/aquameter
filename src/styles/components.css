@@ -2,12 +2,14 @@
 .app {
   display: flex;
   min-height: 100vh;
+  min-height: 100dvh;
 }
 
 .sidebar {
   width: var(--sidebar-w);
   background: var(--ocean);
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
   position: fixed;
@@ -118,6 +120,7 @@
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  min-height: 100dvh;
   transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .sidebar-open .main {
@@ -149,6 +152,32 @@
   padding: 24px;
   max-width: 1400px;
   width: 100%;
+}
+
+.install-banner {
+  margin: 14px 24px 0;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: linear-gradient(135deg, rgba(11, 79, 108, 0.1), rgba(58, 175, 218, 0.1));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.install-banner-title {
+  font-family: 'Outfit', sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.install-banner-text,
+.install-banner-hint {
+  font-size: 12px;
+  color: var(--text-sec);
+  margin-top: 2px;
 }
 
 /* ─── Buttons ─── */
@@ -780,15 +809,28 @@
   /* Sidebar */
   .sidebar { z-index: 200; }
   .sidebar-open .main { margin-left: 0; }
+  .app,
+  .main,
+  .sidebar { min-height: 100dvh; }
 
   .content { padding: 14px 14px 76px; }
 
   /* Topbar */
-  .topbar { padding: 0 14px; }
+  .topbar {
+    padding: env(safe-area-inset-top, 0px) 14px 0;
+    min-height: calc(var(--topbar-h) + env(safe-area-inset-top, 0px));
+    height: auto;
+  }
   .topbar-date { display: none; }
   .topbar-user-info { display: none; }
   .topbar-logout-text { display: none; }
   .topbar-logout-icon { display: inline; }
+
+  .install-banner {
+    margin: 10px 14px 0;
+    align-items: flex-start;
+    flex-direction: column;
+  }
 
   /* Bottom nav */
   .bottom-nav {
@@ -891,7 +933,7 @@
 @media (max-width: 480px) {
   .stats-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
   .content { padding: 10px 10px 76px; }
-  .topbar { padding: 0 12px; }
+  .topbar { padding: env(safe-area-inset-top, 0px) 12px 0; }
   .stat-value { font-size: 20px; }
   .stat-card { padding: 14px; }
   .meter-number { font-size: 26px; letter-spacing: 2px; }
@@ -907,6 +949,18 @@
     font-weight: 700 !important;
     border-radius: 16px !important;
   }
+}
+
+.app.standalone-mode .topbar {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+.app.standalone-mode .content {
+  padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+}
+
+.app.standalone-mode .bottom-nav {
+  height: calc(58px + env(safe-area-inset-bottom, 0px));
 }
 
 /* ─── Login Page ─── */

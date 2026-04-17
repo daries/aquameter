@@ -1,14 +1,31 @@
 import { useState, useEffect, useRef } from 'react'
 import { useStore } from '../store'
-import { settingsAPI, waAPI } from '../utils/api'
+import { settingsAPI, waAPI, databaseAPI } from '../utils/api'
 import { getUser } from '../utils/auth'
-import { Card, Button, FormInput } from '../components/UI'
+import { Card, Button, FormInput, FormSelect } from '../components/UI'
 
 const WA_STATUS_LABEL = {
   disconnected: { text: 'Tidak Terhubung', color: 'var(--danger)' },
   connecting:   { text: 'Menghubungkan…',  color: '#f59e0b' },
   qr:           { text: 'Scan QR Code',    color: '#f59e0b' },
   connected:    { text: 'Terhubung',        color: 'var(--mint)' },
+}
+
+const DB_ENGINES = [
+  { value: 'sqlite',   label: 'SQLite' },
+  { value: 'mysql',    label: 'MySQL' },
+  { value: 'mariadb',  label: 'MariaDB' },
+  { value: 'postgres', label: 'PostgreSQL' },
+]
+
+const emptyDbForm = {
+  activeEngine: 'sqlite',
+  profiles: {
+    sqlite:   { engine: 'sqlite',   filename: 'server/aquameter.db' },
+    mysql:    { engine: 'mysql',    host: '127.0.0.1', port: 3306, user: '', password: '', database: 'aquameter', ssl: false },
+    mariadb:  { engine: 'mariadb',  host: '127.0.0.1', port: 3306, user: '', password: '', database: 'aquameter', ssl: false },
+    postgres: { engine: 'postgres', host: '127.0.0.1', port: 5432, user: '', password: '', database: 'aquameter', ssl: false },
+  },
 }
 
 export default function Settings() {
@@ -19,6 +36,14 @@ export default function Settings() {
   const [form,    setForm]    = useState({})
   const [loading, setLoading] = useState(true)
   const [saving,  setSaving]  = useState(null)
+  const [dbForm, setDbForm] = useState(emptyDbForm)
+  const [dbRuntime, setDbRuntime] = useState(null)
+  const [dbAction, setDbAction] = useState(null)
+  const [migrationResult, setMigrationResult] = useState(null)
+  const [migSource, setMigSource] = useState('sqlite')
+  const [migTarget, setMigTarget] = useState('mysql')
+  const [migAppend, setMigAppend] = useState(false)
+  const [migConfirm, setMigConfirm] = useState(false)
   const loadedRef = useRef(false)
 
   // WhatsApp state
@@ -38,30 +63,36 @@ export default function Settings() {
   useEffect(() => {
     if (loadedRef.current) return
     loadedRef.current = true
-    settingsAPI.get()
-      .then(data => setForm({
-        companyName:        data.companyName        || '',
-        companyAddress:     data.companyAddress     || '',
-        companyPhone:       data.companyPhone       || '',
-        companyEmail:       data.companyEmail       || '',
-        companyNpwp:        data.companyNpwp        || '',
-        readDate:           data.readDate           || '1',
-        dueDays:            data.dueDays            || '20',
-        lateFee:            data.lateFee            || '2',
-        adminFee:           data.adminFee           || '5000',
-        ppjEnabled:         data.ppjEnabled         ?? 'true',
-        ppjRate:            data.ppjRate            || '10',
-        waEnabled:          data.waEnabled          ?? 'false',
-        waTemplateReading:       data.waTemplateReading       || '',
-        waTemplatePayment:       data.waTemplatePayment       || '',
-        waTemplateInstallPending: data.waTemplateInstallPending || '',
-        waTemplateInstallInvoice: data.waTemplateInstallInvoice || '',
-        waTemplateInstallPaid:    data.waTemplateInstallPaid    || '',
-        waTemplateInstallDone:    data.waTemplateInstallDone    || '',
-        installFee:               data.installFee               || '500000',
-        installAdminFee:          data.installAdminFee          || '50000',
-        thermalPaperWidth:        data.thermalPaperWidth        || '58',
-      }))
+    Promise.all([settingsAPI.get(), isAdmin ? databaseAPI.getConfig() : Promise.resolve(null)])
+      .then(([data, dbData]) => {
+        setForm({
+          companyName:        data.companyName        || '',
+          companyAddress:     data.companyAddress     || '',
+          companyPhone:       data.companyPhone       || '',
+          companyEmail:       data.companyEmail       || '',
+          companyNpwp:        data.companyNpwp        || '',
+          readDate:           data.readDate           || '1',
+          dueDays:            data.dueDays            || '20',
+          lateFee:            data.lateFee            || '2',
+          adminFee:           data.adminFee           || '5000',
+          ppjEnabled:         data.ppjEnabled         ?? 'true',
+          ppjRate:            data.ppjRate            || '10',
+          waEnabled:          data.waEnabled          ?? 'false',
+          waTemplateReading:       data.waTemplateReading       || '',
+          waTemplatePayment:       data.waTemplatePayment       || '',
+          waTemplateInstallPending: data.waTemplateInstallPending || '',
+          waTemplateInstallInvoice: data.waTemplateInstallInvoice || '',
+          waTemplateInstallPaid:    data.waTemplateInstallPaid    || '',
+          waTemplateInstallDone:    data.waTemplateInstallDone    || '',
+          installFee:               data.installFee               || '500000',
+          installAdminFee:          data.installAdminFee          || '50000',
+          thermalPaperWidth:        data.thermalPaperWidth        || '58',
+        })
+        if (dbData) {
+          setDbRuntime(dbData.runtime)
+          setDbForm(dbData.config || emptyDbForm)
+        }
+      })
       .catch(e => showToast(e.message, 'error'))
       .finally(() => setLoading(false))
   }, [])
@@ -91,6 +122,69 @@ export default function Settings() {
       showToast(e.message, 'error')
     } finally {
       setSaving(null)
+    }
+  }
+
+  const activeDbEngine = dbForm.activeEngine || 'sqlite'
+  const activeProfile = dbForm.profiles?.[activeDbEngine] || emptyDbForm.profiles[activeDbEngine]
+
+  const updateDbProfile = (engine, key, value) => {
+    setDbForm(prev => ({
+      ...prev,
+      profiles: {
+        ...prev.profiles,
+        [engine]: {
+          ...prev.profiles[engine],
+          [key]: value,
+        },
+      },
+    }))
+  }
+
+  const saveDbConfig = async () => {
+    if (!isAdmin) return
+    setDbAction('save-db')
+    try {
+      const result = await databaseAPI.saveConfig(dbForm)
+      setDbForm(result.config)
+      showToast('Konfigurasi database berhasil disimpan')
+    } catch (e) {
+      showToast(e.message, 'error')
+    } finally {
+      setDbAction(null)
+    }
+  }
+
+  const testDbConnection = async () => {
+    if (!isAdmin) return
+    setDbAction('test-db')
+    try {
+      await databaseAPI.test(activeProfile)
+      showToast(`Koneksi ${activeDbEngine} berhasil`)
+    } catch (e) {
+      showToast(e.message, 'error')
+    } finally {
+      setDbAction(null)
+    }
+  }
+
+  const runMigration = async () => {
+    if (!isAdmin) return
+    if (migSource === migTarget) {
+      showToast('Sumber dan tujuan migrasi tidak boleh sama', 'error')
+      return
+    }
+    setMigConfirm(false)
+    setDbAction('migrate-db')
+    setMigrationResult(null)
+    try {
+      const result = await databaseAPI.migrate({ from: migSource, to: migTarget, resetTarget: !migAppend })
+      setMigrationResult(result.result)
+      showToast(result.message || 'Migrasi database selesai')
+    } catch (e) {
+      showToast(e.message, 'error')
+    } finally {
+      setDbAction(null)
     }
   }
 
@@ -425,6 +519,198 @@ export default function Settings() {
             >
               {saving === 'WhatsApp' ? 'Menyimpan...' : 'Simpan Pengaturan WA'}
             </Button>
+          </div>
+        )}
+      </Card>
+
+      <Card>
+        <div className="card-title" style={{ marginBottom: 16 }}>🗄️ Database & Migrasi</div>
+        <div style={{ fontSize: 12, color: 'var(--text-sec)', marginBottom: 16 }}>
+          Simpan beberapa profil database untuk SQLite, MySQL, dan PostgreSQL. Tool migrasi dapat menyalin seluruh data aplikasi antar engine mana pun.
+        </div>
+
+        {dbRuntime && (
+          <div style={{ background: 'var(--bg)', borderRadius: 10, padding: '12px 14px', marginBottom: 16, fontSize: 12 }}>
+            <div style={{ fontWeight: 700, marginBottom: 4 }}>Runtime saat ini: {dbRuntime.engine?.toUpperCase()}</div>
+            <div style={{ color: 'var(--text-sec)' }}>{dbRuntime.note}</div>
+            {dbRuntime.sqlitePath && (
+              <div style={{ color: 'var(--text-hint)', marginTop: 4 }}>File SQLite: {dbRuntime.sqlitePath}</div>
+            )}
+          </div>
+        )}
+
+        <div className="form-grid">
+          <FormSelect
+            label="Engine Target Aktif"
+            value={activeDbEngine}
+            onChange={e => setDbForm(prev => ({ ...prev, activeEngine: e.target.value }))}
+            disabled={!isAdmin}
+            hint="Dipakai sebagai profil utama untuk uji koneksi dan target migrasi."
+          >
+            {DB_ENGINES.map(engine => (
+              <option key={engine.value} value={engine.value}>{engine.label}</option>
+            ))}
+          </FormSelect>
+          {activeDbEngine === 'sqlite' ? (
+            <FormInput
+              label="Path File SQLite"
+              value={activeProfile.filename || ''}
+              onChange={e => updateDbProfile('sqlite', 'filename', e.target.value)}
+              readOnly={!isAdmin}
+              placeholder="server/aquameter.db"
+              hint="Gunakan path absolut atau relatif ke folder proyek."
+            />
+          ) : (
+            <FormInput
+              label="Nama Database"
+              value={activeProfile.database || ''}
+              onChange={e => updateDbProfile(activeDbEngine, 'database', e.target.value)}
+              readOnly={!isAdmin}
+              placeholder="aquameter"
+            />
+          )}
+        </div>
+
+        {activeDbEngine !== 'sqlite' && (
+          <>
+            <div className="form-grid">
+              <FormInput
+                label="Host"
+                value={activeProfile.host || ''}
+                onChange={e => updateDbProfile(activeDbEngine, 'host', e.target.value)}
+                readOnly={!isAdmin}
+                placeholder="127.0.0.1"
+              />
+              <FormInput
+                label="Port"
+                type="number"
+                value={activeProfile.port || ''}
+                onChange={e => updateDbProfile(activeDbEngine, 'port', e.target.value)}
+                readOnly={!isAdmin}
+              />
+            </div>
+            <div className="form-grid">
+              <FormInput
+                label="Username"
+                value={activeProfile.user || ''}
+                onChange={e => updateDbProfile(activeDbEngine, 'user', e.target.value)}
+                readOnly={!isAdmin}
+              />
+              <FormInput
+                label="Password"
+                type="password"
+                value={activeProfile.password || ''}
+                onChange={e => updateDbProfile(activeDbEngine, 'password', e.target.value)}
+                readOnly={!isAdmin}
+                hint="Biarkan tetap ter-mask jika tidak ingin mengganti password tersimpan."
+              />
+            </div>
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginBottom: 18, fontSize: 13, cursor: isAdmin ? 'pointer' : 'default' }}>
+              <input
+                type="checkbox"
+                checked={Boolean(activeProfile.ssl)}
+                onChange={e => updateDbProfile(activeDbEngine, 'ssl', e.target.checked)}
+                disabled={!isAdmin}
+                style={{ width: 16, height: 16, accentColor: 'var(--ocean)' }}
+              />
+              <span>Gunakan koneksi SSL</span>
+            </label>
+          </>
+        )}
+
+        {isAdmin && (
+          <>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
+              <Button variant="secondary" onClick={testDbConnection} disabled={!!dbAction}>
+                {dbAction === 'test-db' ? 'Menguji koneksi...' : 'Test Koneksi'}
+              </Button>
+              <Button variant="primary" onClick={saveDbConfig} disabled={!!dbAction}>
+                {dbAction === 'save-db' ? 'Menyimpan...' : 'Simpan Profil Database'}
+              </Button>
+            </div>
+
+            {/* ── Migrasi Antar Database ── */}
+            <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+              <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 12 }}>Migrasi Antar Database</div>
+              <div className="form-grid" style={{ marginBottom: 12 }}>
+                <FormSelect
+                  label="Sumber (From)"
+                  value={migSource}
+                  onChange={e => { setMigSource(e.target.value); setMigConfirm(false); setMigrationResult(null) }}
+                >
+                  {DB_ENGINES.map(eng => (
+                    <option key={eng.value} value={eng.value}>{eng.label}</option>
+                  ))}
+                </FormSelect>
+                <FormSelect
+                  label="Tujuan (To)"
+                  value={migTarget}
+                  onChange={e => { setMigTarget(e.target.value); setMigConfirm(false); setMigrationResult(null) }}
+                >
+                  {DB_ENGINES.map(eng => (
+                    <option key={eng.value} value={eng.value}>{eng.label}</option>
+                  ))}
+                </FormSelect>
+              </div>
+
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginBottom: 14, fontSize: 13, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={migAppend}
+                  onChange={e => setMigAppend(e.target.checked)}
+                  style={{ width: 16, height: 16, accentColor: 'var(--ocean)' }}
+                />
+                <span>Mode Tambah — tidak hapus data di tujuan sebelum migrasi</span>
+              </label>
+
+              {migSource === migTarget ? (
+                <div style={{ fontSize: 12, color: 'var(--danger)', marginBottom: 8 }}>
+                  ⚠️ Sumber dan tujuan tidak boleh sama.
+                </div>
+              ) : !migConfirm ? (
+                <Button
+                  variant="ghost"
+                  onClick={() => setMigConfirm(true)}
+                  disabled={!!dbAction}
+                >
+                  {`Mulai Migrasi ${DB_ENGINES.find(x => x.value === migSource)?.label} → ${DB_ENGINES.find(x => x.value === migTarget)?.label}`}
+                </Button>
+              ) : (
+                <div style={{ background: 'var(--danger-pale, #fff0f0)', border: '1px solid var(--danger)', borderRadius: 10, padding: '12px 14px', fontSize: 13 }}>
+                  <div style={{ fontWeight: 700, marginBottom: 8, color: 'var(--danger)' }}>
+                    ⚠️ Konfirmasi Migrasi
+                  </div>
+                  <div style={{ marginBottom: 10, color: 'var(--text-sec)' }}>
+                    Data dari <b>{DB_ENGINES.find(x => x.value === migSource)?.label}</b> akan disalin ke <b>{DB_ENGINES.find(x => x.value === migTarget)?.label}</b>.
+                    {!migAppend && ' Data lama di database tujuan akan dihapus terlebih dahulu.'}
+                  </div>
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    <Button variant="danger" onClick={runMigration} disabled={dbAction === 'migrate-db'}>
+                      {dbAction === 'migrate-db' ? 'Menjalankan migrasi...' : 'Ya, Jalankan Migrasi'}
+                    </Button>
+                    <Button variant="secondary" onClick={() => setMigConfirm(false)} disabled={dbAction === 'migrate-db'}>
+                      Batal
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
+        {migrationResult && (
+          <div style={{ background: 'var(--ocean-pale)', borderRadius: 10, padding: '14px 16px', fontSize: 12 }}>
+            <div style={{ fontWeight: 700, color: 'var(--ocean)', marginBottom: 8 }}>
+              Migrasi selesai: {migrationResult.sourceEngine} {'->'} {migrationResult.targetEngine}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 8 }}>
+              {migrationResult.stats?.map(item => (
+                <div key={item.table} style={{ background: '#fff', borderRadius: 8, padding: '8px 10px' }}>
+                  <div style={{ fontWeight: 600 }}>{item.table}</div>
+                  <div style={{ color: 'var(--text-sec)' }}>{item.rows} baris</div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </Card>

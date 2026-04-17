@@ -32,13 +32,13 @@ function formatDate(d) {
 }
 
 // Cari pelanggan by wa_jid (prioritas) — tidak lagi by phone karena WA pakai LID
-function findCustomerByJid(db, jid) {
-  return db.prepare("SELECT * FROM customers WHERE wa_jid = ? AND status = 'active'").get(jid) || null
+async function findCustomerByJid(db, jid) {
+  return await db.get("SELECT * FROM customers WHERE wa_jid = ? AND status = 'active'", [jid]) || null
 }
 
 // Simpan JID ke pelanggan setelah registrasi
-function linkJid(db, custId, jid) {
-  db.prepare('UPDATE customers SET wa_jid = ? WHERE id = ?').run(jid, custId)
+async function linkJid(db, custId, jid) {
+  await db.run('UPDATE customers SET wa_jid = ? WHERE id = ?', [jid, custId])
 }
 
 // ─── Entry point ───
@@ -86,11 +86,11 @@ async function handleMessage(jid, _phone, rawText, deps) {
 
   // Nomor tiket langsung (format TKT-xxxx)
   if (/^tkt-\d+$/i.test(lower)) {
-    const ticket = db.prepare(`
+    const ticket = await db.get(`
       SELECT t.*, c.name as cust_name
       FROM tickets t LEFT JOIN customers c ON c.id = t.cust_id
       WHERE LOWER(t.ticket_no) = LOWER(?)
-    `).get(text.trim())
+    `, [text.trim()])
     await sendTicketStatus(jid, ticket, wa)
     return
   }
@@ -106,7 +106,7 @@ async function handleMessage(jid, _phone, rawText, deps) {
   if (sess?.state === 'wait_ticket_no')         return handleWaitTicketNo(jid, text, deps)
 
   // ── Cari pelanggan by JID ──
-  const cust = findCustomerByJid(db, jid)
+  const cust = await findCustomerByJid(db, jid)
 
   if (!cust) {
     // Belum terdaftar — minta registrasi dengan nomor meter
@@ -129,9 +129,9 @@ async function handleWaitRegister(jid, text, _sess, { db, wa, getSettings }) {
   const companyName = sett.companyName || 'PAMSIMAS'
 
   // Cari pelanggan dengan nomor meter yang dikirim (case-insensitive)
-  const cust = db.prepare(
+  const cust = await db.get(
     "SELECT * FROM customers WHERE LOWER(meter) = LOWER(?) AND status = 'active'"
-  ).get(text.trim())
+  , [text.trim()])
 
   if (!cust) {
     await wa.sendMessage(jid,
@@ -152,7 +152,7 @@ async function handleWaitRegister(jid, text, _sess, { db, wa, getSettings }) {
   }
 
   // Simpan JID
-  linkJid(db, cust.id, jid)
+  await linkJid(db, cust.id, jid)
   clearSession(jid)
 
   await wa.sendMessage(jid,
@@ -173,7 +173,7 @@ async function handleIdle(jid, lower, cust, { db, wa }) {
 
   if (isTagihan) {
     const period = new Date().toISOString().substring(0, 7)
-    const bill   = db.prepare('SELECT * FROM bills WHERE cust_id = ? AND period_key = ?').get(cust.id, period)
+    const bill   = await db.get('SELECT * FROM bills WHERE cust_id = ? AND period_key = ?', [cust.id, period])
 
     if (!bill) {
       await wa.sendMessage(jid,
@@ -200,7 +200,7 @@ async function handleIdle(jid, lower, cust, { db, wa }) {
 
   if (isCatat) {
     const period   = new Date().toISOString().substring(0, 7)
-    const existing = db.prepare('SELECT * FROM readings WHERE cust_id = ? AND period = ?').get(cust.id, period)
+    const existing = await db.get('SELECT * FROM readings WHERE cust_id = ? AND period = ?', [cust.id, period])
 
     if (existing) {
       await wa.sendMessage(jid,
@@ -226,7 +226,7 @@ async function handleIdle(jid, lower, cust, { db, wa }) {
   }
 
   if (isAduan) {
-    const cats = db.prepare("SELECT name FROM ticket_categories WHERE is_active=1 ORDER BY id").all()
+    const cats = await db.all("SELECT name FROM ticket_categories WHERE is_active=1 ORDER BY id")
     const list = cats.map((c, i) => `${i + 1}. ${c.name}`).join('\n')
     setSession(jid, 'wait_complaint_cat', { custId: cust.id, custName: cust.name, cats: cats.map(c => c.name) })
     await wa.sendMessage(jid,
@@ -250,7 +250,7 @@ async function handleIdle(jid, lower, cust, { db, wa }) {
 
 // ─── STATE: wait_reading ───
 async function handleWaitReading(jid, text, sess, { db, wa, calcWaterCost, getSettings }) {
-  const cust = db.prepare('SELECT * FROM customers WHERE id = ?').get(sess.data.custId)
+  const cust = await db.get('SELECT * FROM customers WHERE id = ?', [sess.data.custId])
   if (!cust) { clearSession(jid); return }
 
   const cleaned = text.replace(/[\s.,]/g, '')
@@ -311,7 +311,7 @@ async function handleWaitConfirm(jid, lower, sess, { db, wa, getSettings, calcDu
   }
 
   const { custId, newStand, usage, total, cost, admin, ppj } = sess.data
-  const cust = db.prepare('SELECT * FROM customers WHERE id = ?').get(custId)
+  const cust = await db.get('SELECT * FROM customers WHERE id = ?', [custId])
   if (!cust) { clearSession(jid); return }
 
   const sett    = getSettings()
@@ -319,7 +319,7 @@ async function handleWaitConfirm(jid, lower, sess, { db, wa, getSettings, calcDu
   const period  = today.substring(0, 7)
   const dueDate = calcDueDate(today, parseInt(sett.dueDays) || 20)
 
-  const existing = db.prepare('SELECT id FROM readings WHERE cust_id = ? AND period = ?').get(custId, period)
+  const existing = await db.get('SELECT id FROM readings WHERE cust_id = ? AND period = ?', [custId, period])
   if (existing) {
     clearSession(jid)
     await wa.sendMessage(jid,
@@ -332,26 +332,24 @@ async function handleWaitConfirm(jid, lower, sess, { db, wa, getSettings, calcDu
   try {
     const periodName = new Date(today + 'T00:00:00').toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })
 
-    const tx = db.transaction(() => {
-      db.prepare(`
+    const { invoiceNo } = await db.transaction(async (tx) => {
+      await tx.run(`
         INSERT INTO readings (cust_id, last_stand, current_stand, usage, date, note, period)
         VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).run(custId, cust.last_stand, newStand, usage, today, 'Catat mandiri via WhatsApp', period)
+      `, [custId, cust.last_stand, newStand, usage, today, 'Catat mandiri via WhatsApp', period])
 
-      const b = db.prepare(`
+      const b = await tx.run(`
         INSERT INTO bills (cust_id, invoice_no, period, period_key, usage, water_cost, admin, ppj, total, due_date)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(custId, `_TMP_${Date.now()}`, periodName, period, usage, cost, admin, ppj, total, dueDate)
+      `, [custId, `_TMP_${Date.now()}`, periodName, period, usage, cost, admin, ppj, total, dueDate])
 
       const billId    = b.lastInsertRowid
       const invoiceNo = `INV-${new Date().getFullYear()}-${String(billId).padStart(4, '0')}`
-      db.prepare('UPDATE bills SET invoice_no = ? WHERE id = ?').run(invoiceNo, billId)
-      db.prepare('UPDATE customers SET last_stand = ? WHERE id = ?').run(newStand, custId)
+      await tx.run('UPDATE bills SET invoice_no = ? WHERE id = ?', [invoiceNo, billId])
+      await tx.run('UPDATE customers SET last_stand = ? WHERE id = ?', [newStand, custId])
 
       return { invoiceNo }
     })
-
-    const { invoiceNo } = tx()
     clearSession(jid)
 
     await wa.sendMessage(jid,
@@ -406,11 +404,11 @@ async function sendTicketStatus(jid, ticket, wa) {
 // ─── STATE: wait_ticket_no ───
 async function handleWaitTicketNo(jid, text, { db, wa }) {
   clearSession(jid)
-  const ticket = db.prepare(`
+  const ticket = await db.get(`
     SELECT t.*, c.name as cust_name
     FROM tickets t LEFT JOIN customers c ON c.id = t.cust_id
     WHERE LOWER(t.ticket_no) = LOWER(?)
-  `).get(text.trim())
+  `, [text.trim()])
   await sendTicketStatus(jid, ticket, wa)
 }
 
@@ -470,24 +468,24 @@ async function handleWaitComplaintConfirm(jid, lower, sess, { db, wa, getSetting
   const sett = getSettings()
 
   // Buat nomor tiket
-  const last = db.prepare("SELECT ticket_no FROM tickets ORDER BY id DESC LIMIT 1").get()
+  const last = await db.get("SELECT ticket_no FROM tickets ORDER BY id DESC LIMIT 1")
   let seq = 1
   if (last) { const m = last.ticket_no.match(/TKT-(\d+)/); if (m) seq = parseInt(m[1]) + 1 }
   const ticketNo = `TKT-${String(seq).padStart(4, '0')}`
 
-  const cust = custId ? db.prepare('SELECT * FROM customers WHERE id = ?').get(custId) : null
+  const cust = custId ? await db.get('SELECT * FROM customers WHERE id = ?', [custId]) : null
   const now  = new Date().toISOString().replace('T', ' ').slice(0, 19)
 
   try {
-    const r = db.prepare(`
+    const r = await db.run(`
       INSERT INTO tickets (ticket_no, cust_id, reporter_name, reporter_phone, category, description, priority, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, 'medium', ?, ?)
-    `).run(ticketNo, custId || null, custName, cust?.phone || null, category, description, now, now)
+    `, [ticketNo, custId || null, custName, cust?.phone || null, category, description, now, now])
 
-    db.prepare(`
+    await db.run(`
       INSERT INTO ticket_updates (ticket_id, status, note, created_by, created_at)
       VALUES (?, 'open', 'Laporan masuk via WhatsApp', 'Bot WA', ?)
-    `).run(r.lastInsertRowid, now)
+    `, [r.lastInsertRowid, now])
 
     clearSession(jid)
     await wa.sendMessage(jid,

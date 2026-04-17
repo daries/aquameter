@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { getUser, clearAuth } from '../utils/auth'
 import { authAPI } from '../utils/api'
@@ -48,12 +48,32 @@ const pageTitles = {
   '/settings': '⚙️ Pengaturan',
 }
 
-export function Layout({ children }) {
+export function Layout({ children, isMobileBrowser = false, isStandalone = false }) {
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 768)
+  const [installPrompt, setInstallPrompt] = useState(null)
   const location = useLocation()
   const navigate = useNavigate()
   const title = pageTitles[location.pathname] || 'PAMSIMAS'
   const user = getUser()
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (event) => {
+      event.preventDefault()
+      setInstallPrompt(event)
+    }
+
+    const handleInstalled = () => {
+      setInstallPrompt(null)
+    }
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
+    window.addEventListener('appinstalled', handleInstalled)
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
+      window.removeEventListener('appinstalled', handleInstalled)
+    }
+  }, [])
 
   const handleLogout = async () => {
     try { await authAPI.logout() } catch (e) { /* ignore */ }
@@ -63,8 +83,15 @@ export function Layout({ children }) {
 
   const closeSidebar = () => setSidebarOpen(false)
 
+  const handleInstall = async () => {
+    if (!installPrompt) return
+    await installPrompt.prompt()
+    await installPrompt.userChoice.catch(() => null)
+    setInstallPrompt(null)
+  }
+
   return (
-    <div className={`app ${sidebarOpen ? 'sidebar-open' : ''}`}>
+    <div className={`app ${sidebarOpen ? 'sidebar-open' : ''} ${isMobileBrowser ? 'mobile-browser' : ''} ${isStandalone ? 'standalone-mode' : ''}`}>
       {/* Overlay (visible on mobile when sidebar open) */}
       {sidebarOpen && (
         <div
@@ -103,6 +130,24 @@ export function Layout({ children }) {
             )}
           </div>
         </div>
+
+        {isMobileBrowser && !isStandalone && (
+          <div className="install-banner no-print">
+            <div>
+              <div className="install-banner-title">Mode aplikasi tersedia di mobile</div>
+              <div className="install-banner-text">
+                Install AquaMeter ke home screen supaya tampil full-screen, lebih stabil, dan terasa seperti aplikasi.
+              </div>
+            </div>
+            {installPrompt ? (
+              <button type="button" className="btn btn-primary btn-sm" onClick={handleInstall}>
+                Install App
+              </button>
+            ) : (
+              <div className="install-banner-hint">Gunakan menu browser lalu pilih "Add to Home Screen"</div>
+            )}
+          </div>
+        )}
 
         <div className="content animate-fade">
           {children}
