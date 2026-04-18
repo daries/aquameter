@@ -282,8 +282,8 @@ function EditReadingModal({ reading, onSave, onClose }) {
 
   const handleSave = async () => {
     const val = parseFloat(stand)
-    if (isNaN(val) || val <= reading.lastStand) {
-      setError(`Stand harus lebih dari stand lama (${reading.lastStand} m³)`)
+    if (isNaN(val) || val < reading.lastStand) {
+      setError(`Stand baru tidak boleh kurang dari stand lama (${reading.lastStand} m³)`)
       return
     }
     setSaving(true)

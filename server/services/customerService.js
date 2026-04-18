@@ -37,11 +37,18 @@ async function getCustomerRowById(db, id) {
 
 async function createCustomer(db, payload) {
   const joinDate = payload.joinDate || new Date().toISOString().split('T')[0]
+  const autoMeter = !payload.meter || payload.meter === 'AUTO'
+  const tempMeter = autoMeter ? '__AUTO__' : payload.meter
   const result = await db.run(`
     INSERT INTO customers (name, ktp, meter, grp, address, phone, last_stand, join_date)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `, [payload.name, payload.ktp, payload.meter, payload.group || 'R1', payload.address, payload.phone, payload.lastStand || 0, joinDate])
-  return await getCustomerById(db, result.lastInsertRowid)
+  `, [payload.name, payload.ktp, tempMeter, payload.group || 'R1', payload.address, payload.phone, payload.lastStand || 0, joinDate])
+  const newId = result.lastInsertRowid
+  if (autoMeter) {
+    const meter = 'MET-' + String(newId).padStart(4, '0')
+    await db.run('UPDATE customers SET meter = ? WHERE id = ?', [meter, newId])
+  }
+  return await getCustomerById(db, newId)
 }
 
 async function updateCustomer(db, id, payload) {

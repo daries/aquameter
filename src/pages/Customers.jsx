@@ -20,6 +20,7 @@ export default function Customers() {
   const [errors, setErrors]         = useState({})
   const [confirmDelete, setConfirmDelete] = useState(null)
   const [saving, setSaving]         = useState(false)
+  const [autoMeter, setAutoMeter]   = useState(true)
   const loadedRef = useRef(false)
 
   const loadCustomers = async () => {
@@ -45,9 +46,16 @@ export default function Customers() {
     c.address.toLowerCase().includes(search.toLowerCase())
   )
 
-  const openAdd  = () => { setEditData(null); setForm(empty); setErrors({}); setModalOpen(true) }
+  const openAdd  = () => {
+    setEditData(null)
+    setAutoMeter(true)
+    setForm(empty)
+    setErrors({})
+    setModalOpen(true)
+  }
   const openEdit = (c) => {
     setEditData(c)
+    setAutoMeter(false)
     setForm({ name: c.name, ktp: c.ktp || '', meter: c.meter, group: c.group, address: c.address || '', phone: c.phone || '', lastStand: c.lastStand })
     setErrors({})
     setModalOpen(true)
@@ -56,10 +64,12 @@ export default function Customers() {
   const validate = () => {
     const errs = {}
     if (!form.name.trim())    errs.name    = 'Nama wajib diisi'
-    if (!form.meter.trim())   errs.meter   = 'No. Meteran wajib diisi'
+    if (!autoMeter && !form.meter.trim()) errs.meter = 'No. Meteran wajib diisi'
+    if (!autoMeter) {
+      const dup = customers.find(c => c.meter === form.meter && (!editData || c.id !== editData.id))
+      if (dup) errs.meter = 'No. Meteran sudah digunakan'
+    }
     if (!form.address.trim()) errs.address = 'Alamat wajib diisi'
-    const dup = customers.find(c => c.meter === form.meter && (!editData || c.id !== editData.id))
-    if (dup) errs.meter = 'No. Meteran sudah digunakan'
     setErrors(errs)
     return Object.keys(errs).length === 0
   }
@@ -72,13 +82,17 @@ export default function Customers() {
         await customerAPI.update(editData.id, form)
         showToast('Data ' + form.name + ' berhasil diperbarui!')
       } else {
-        await customerAPI.create(form)
+        await customerAPI.create({ ...form, meter: autoMeter ? '' : form.meter })
         showToast('Pelanggan ' + form.name + ' berhasil ditambahkan!')
       }
       setModalOpen(false)
       await loadCustomers()
     } catch (e) {
-      showToast(e.message, 'error')
+      if (e.message.includes('meter sudah digunakan') || e.message.includes('UNIQUE')) {
+        setErrors(prev => ({ ...prev, meter: 'No. Meteran sudah digunakan' }))
+      } else {
+        showToast(e.message, 'error')
+      }
     } finally {
       setSaving(false)
     }
@@ -175,7 +189,36 @@ export default function Customers() {
         <div className="form-grid">
           <FormInput label="Nama Lengkap" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Budi Santoso" error={errors.name} />
           <FormInput label="No. KTP" value={form.ktp} onChange={e => setForm({ ...form, ktp: e.target.value })} placeholder="16 digit" maxLength={16} />
-          <FormInput label="No. Meteran" value={form.meter} onChange={e => setForm({ ...form, meter: e.target.value })} placeholder="MET-0001" error={errors.meter} />
+          <div className="form-group">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+              <label className="form-label" style={{ margin: 0 }}>No. Meteran</label>
+              {!editData && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-sec)', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={autoMeter}
+                    onChange={e => {
+                      setAutoMeter(e.target.checked)
+                      if (!e.target.checked) setForm(p => ({ ...p, meter: '' }))
+                    }}
+                    style={{ width: 14, height: 14 }}
+                  />
+                  Auto
+                </label>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input
+                className={`form-input${errors.meter ? ' error' : ''}`}
+                style={{ flex: 1, color: autoMeter && !editData ? 'var(--text-hint)' : undefined }}
+                value={autoMeter && !editData ? form.meter : form.meter}
+                onChange={e => setForm({ ...form, meter: e.target.value })}
+                placeholder={autoMeter && !editData ? 'MET-xxxx (otomatis dari ID)' : 'MET-0001'}
+                readOnly={autoMeter && !editData}
+              />
+            </div>
+            {errors.meter && <div className="form-hint" style={{ color: 'var(--danger)' }}>{errors.meter}</div>}
+          </div>
           <FormSelect label="Golongan" value={form.group} onChange={e => setForm({ ...form, group: e.target.value })}>
             {GOLONGAN_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </FormSelect>

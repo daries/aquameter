@@ -168,6 +168,16 @@ router.get('/customers', async (req, res) => {
   }
 })
 
+router.get('/customers/next-meter', async (req, res) => {
+  try {
+    const row = await appDb.get('SELECT MAX(id) AS maxId FROM customers')
+    const nextId = (row?.maxId || 0) + 1
+    res.json({ meter: 'MET-' + String(nextId).padStart(4, '0') })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
 router.get('/customers/:id', async (req, res) => {
   try {
     const row = await getCustomerById(appDb, req.params.id)
@@ -180,7 +190,7 @@ router.get('/customers/:id', async (req, res) => {
 
 router.post('/customers', async (req, res) => {
   const { name, ktp, meter, group, address, phone, lastStand = 0 } = req.body
-  if (!name || !meter) return res.status(400).json({ error: 'name and meter required' })
+  if (!name) return res.status(400).json({ error: 'name required' })
   try {
     res.status(201).json(await createCustomer(appDb, { name, ktp, meter, group, address, phone, lastStand }))
   } catch (e) {
@@ -229,8 +239,8 @@ router.patch('/readings/:id', async (req, res) => {
     return res.status(400).json({ error: 'Tagihan sudah lunas, pembacaan tidak bisa diedit' })
 
   const newStand = parseFloat(currentStand)
-  if (isNaN(newStand) || newStand <= reading.last_stand)
-    return res.status(400).json({ error: `Stand harus lebih dari stand lama (${reading.last_stand})` })
+  if (isNaN(newStand) || newStand < reading.last_stand)
+    return res.status(400).json({ error: `Stand baru tidak boleh kurang dari stand lama (${reading.last_stand})` })
 
   const cust     = await getMeterCustomerRowById(appDb, reading.cust_id)
   const usage    = newStand - reading.last_stand
@@ -252,8 +262,8 @@ router.post('/readings', async (req, res) => {
   const { custId, currentStand, date, note, photo } = req.body
   const cust = await getMeterCustomerRowById(appDb, custId)
   if (!cust) return res.status(404).json({ error: 'Pelanggan tidak ditemukan' })
-  if (currentStand <= cust.last_stand)
-    return res.status(400).json({ error: `Stand harus lebih dari stand lama (${cust.last_stand})` })
+  if (currentStand < cust.last_stand)
+    return res.status(400).json({ error: `Stand baru tidak boleh kurang dari stand lama (${cust.last_stand})` })
 
   const usage  = currentStand - cust.last_stand
   const period = date.substring(0, 7)
@@ -266,7 +276,7 @@ router.post('/readings', async (req, res) => {
   const total     = cost + admin + ppj
   const dueDate   = calcDueDate(date, parseInt(settings.dueDays) || 20)
   const periodDate = new Date(date + 'T00:00:00')
-  const periodName = periodDate.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })
+  const periodName = periodDate.toLocaleDateString('id-ID', { timeZone: getTimezone(), month: 'long', year: 'numeric' })
 
   // ── Kirim notifikasi WhatsApp (pembacaan meteran) ──
   try {
@@ -290,7 +300,7 @@ router.post('/readings', async (req, res) => {
     const sett = getSettings()
     if (sett.waEnabled === 'true' && cust.phone) {
       const bill  = result.rawBill
-      const bulan = new Date(date + 'T00:00:00').toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })
+      const bulan = new Date(date + 'T00:00:00').toLocaleDateString('id-ID', { timeZone: getTimezone(), month: 'long', year: 'numeric' })
       const msg   = (sett.waTemplateReading || '')
         .replace('{nama}',          cust.name)
         .replace('{nomor_meter}',   cust.meter)
@@ -335,7 +345,7 @@ router.patch('/bills/:id/pay', async (req, res) => {
   if (!bill) return res.status(404).json({ error: 'Tagihan tidak ditemukan' })
   if (bill.status === 'paid') return res.status(400).json({ error: 'Tagihan sudah lunas' })
 
-  const today = new Date().toISOString().split('T')[0]
+  const today = getToday(getTimezone())
   try {
     const row = await markBillPaid(appDb, req.params.id, today)
 
@@ -348,7 +358,7 @@ router.patch('/bills/:id/pay', async (req, res) => {
         .replace('{invoice}',         bill.invoice_no)
         .replace('{bulan}',           bulan)
         .replace('{jumlah}',          Number(bill.total).toLocaleString('id-ID'))
-        .replace('{tgl_bayar}',       new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }))
+        .replace('{tgl_bayar}',       formatLongDate(getTimezone()))
         .replace('{nama_perusahaan}', settWA.companyName || 'PAMSIMAS')
       wa.sendMessage(custWA.phone, msg).catch(e => console.error('WA payment notif error:', e.message))
     }
@@ -487,7 +497,7 @@ router.get('/reports/monthly', async (req, res) => {
 
 router.get('/reports/summary', async (_req, res) => {
   try {
-    res.json(await getSummaryReport(appDb, new Date().toISOString().split('T')[0]))
+    res.json(await getSummaryReport(appDb, getToday(getTimezone())))
   } catch (error) {
     res.status(500).json({ error: error.message })
   }
@@ -639,7 +649,7 @@ router.post('/installations', requireAuth, async (req, res) => {
       const msg = (sett.waTemplateInstallPending || '')
         .replace('{nama}', name)
         .replace('{no_daftar}', `PB-${String(row.id).padStart(4, '0')}`)
-        .replace('{tanggal}', new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }))
+        .replace('{tanggal}', formatLongDate(getTimezone()))
         .replace('{nama_perusahaan}', sett.companyName || 'PAMSIMAS')
       wa.sendMessage(phone, msg).catch(e => console.error('WA install pending error:', e.message))
     }
@@ -669,8 +679,8 @@ router.patch('/installations/:id/invoice', requireAdmin, async (req, res) => {
   const installFee = parseFloat(req.body.installFee ?? sett.installFee ?? 500000)
   const adminFee   = parseFloat(req.body.adminFee   ?? sett.installAdminFee ?? 50000)
   const totalFee   = installFee + adminFee
-  const today      = new Date().toISOString().split('T')[0]
-  const invoiceNo  = `PB-${new Date().getFullYear()}-${String(inst.id).padStart(4, '0')}`
+  const today      = getToday(getTimezone())
+  const invoiceNo  = `PB-${today.split('-')[0]}-${String(inst.id).padStart(4, '0')}`
   try {
     const updated = await createInstallationInvoice(appDb, req.params.id, { installFee, adminFee, totalFee, invoiceNo, today })
     if (sett.waEnabled === 'true' && inst.phone) {
@@ -694,7 +704,7 @@ router.patch('/installations/:id/pay', requireAdmin, async (req, res) => {
   const inst = await getInstallationRowById(appDb, req.params.id)
   if (!inst) return res.status(404).json({ error: 'Data tidak ditemukan' })
   if (inst.status !== 'invoiced') return res.status(400).json({ error: 'Hanya bisa bayar untuk status invoiced' })
-  const today = new Date().toISOString().split('T')[0]
+  const today = getToday(getTimezone())
   const sett = getSettings()
   try {
     const updated = await markInstallationPaid(appDb, req.params.id, { today })
@@ -703,7 +713,7 @@ router.patch('/installations/:id/pay', requireAdmin, async (req, res) => {
         .replace('{nama}', inst.name)
         .replace('{invoice}', inst.invoice_no)
         .replace('{total}', Number(inst.total_fee).toLocaleString('id-ID'))
-        .replace('{tgl_bayar}', new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }))
+        .replace('{tgl_bayar}', formatLongDate(getTimezone()))
         .replace('{nama_perusahaan}', sett.companyName || 'PAMSIMAS')
       wa.sendMessage(inst.phone, msg).catch(e => console.error('WA install paid error:', e.message))
     }
@@ -720,7 +730,7 @@ router.patch('/installations/:id/install', requireAdmin, async (req, res) => {
   if (inst.status !== 'paid') return res.status(400).json({ error: 'Hanya bisa install untuk status paid' })
   const { meterNo, lastStand = 0 } = req.body
   if (!meterNo) return res.status(400).json({ error: 'Nomor meter wajib diisi' })
-  const today = new Date().toISOString().split('T')[0]
+  const today = getToday(getTimezone())
   const sett   = getSettings()
   try {
     const updated = await markInstallationInstalled(appDb, req.params.id, { meterNo, lastStand, today })
@@ -728,7 +738,7 @@ router.patch('/installations/:id/install', requireAdmin, async (req, res) => {
       const msg = (sett.waTemplateInstallDone || '')
         .replace('{nama}', inst.name)
         .replace('{meter}', meterNo)
-        .replace('{tgl_pasang}', new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }))
+        .replace('{tgl_pasang}', formatLongDate(getTimezone()))
         .replace('{nama_perusahaan}', sett.companyName || 'PAMSIMAS')
       wa.sendMessage(inst.phone, msg).catch(e => console.error('WA install done error:', e.message))
     }
@@ -919,7 +929,7 @@ router.post('/tickets', requireAuth, async (req, res) => {
       description,
       priority,
       createdBy: req.user.fullName,
-      now: new Date().toISOString().replace('T', ' ').slice(0, 19),
+      now: getNow(getTimezone()),
     })
     res.status(201).json(row)
   } catch (error) {
@@ -938,7 +948,7 @@ router.put('/tickets/:id', requireAuth, async (req, res) => {
       priority,
       assignedTo,
       notes,
-      now: new Date().toISOString().replace('T', ' ').slice(0, 19),
+      now: getNow(getTimezone()),
     })
     if (!row) return res.status(404).json({ error: 'Tiket tidak ditemukan' })
     res.json(row)
@@ -956,7 +966,7 @@ router.patch('/tickets/:id/status', requireAuth, async (req, res) => {
       status,
       note,
       createdBy: req.user.fullName,
-      now: new Date().toISOString().replace('T', ' ').slice(0, 19),
+      now: getNow(getTimezone()),
     })
     if (!row) return res.status(404).json({ error: 'Tiket tidak ditemukan' })
     res.json(row)
@@ -1085,6 +1095,24 @@ startServer().catch(err => {
 // ─── Helper functions ───
 function getSettings() {
   return { ..._settingsCache }
+}
+
+// Timezone-aware date helpers — use configured timezone from settings
+// sv-SE locale gives YYYY-MM-DD and YYYY-MM-DD HH:MM:SS natively
+function getToday(tz) {
+  return new Date().toLocaleDateString('sv-SE', { timeZone: tz || 'Asia/Jakarta' })
+}
+function getNow(tz) {
+  return new Date().toLocaleString('sv-SE', { timeZone: tz || 'Asia/Jakarta' }).replace('T', ' ')
+}
+function formatLongDate(tz) {
+  return new Date().toLocaleDateString('id-ID', {
+    timeZone: tz || 'Asia/Jakarta',
+    day: 'numeric', month: 'long', year: 'numeric',
+  })
+}
+function getTimezone() {
+  return getSettings().timezone || 'Asia/Jakarta'
 }
 
 // Tariff cache — pre-loaded at startup, updated via setTariffCacheEntry when changed

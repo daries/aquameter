@@ -71,6 +71,7 @@ export default function Settings() {
           companyPhone:       data.companyPhone       || '',
           companyEmail:       data.companyEmail       || '',
           companyNpwp:        data.companyNpwp        || '',
+          timezone:           data.timezone           || 'Asia/Jakarta',
           readDate:           data.readDate           || '1',
           dueDays:            data.dueDays            || '20',
           lateFee:            data.lateFee            || '2',
@@ -243,10 +244,23 @@ export default function Settings() {
             <FormInput label="Email" type="email" {...f('companyEmail')} />
           </div>
           <FormInput label="NPWP" {...f('companyNpwp')} placeholder="XX.XXX.XXX.X-XXX.XXX" />
+          <FormSelect
+            label="Zona Waktu"
+            value={form.timezone || 'Asia/Jakarta'}
+            onChange={e => setForm(p => ({ ...p, timezone: e.target.value }))}
+            disabled={!isAdmin}
+            hint="Mempengaruhi tanggal/jam di notifikasi WhatsApp dan laporan server"
+          >
+            <option value="Asia/Jakarta">WIB – Waktu Indonesia Barat (UTC+7)</option>
+            <option value="Asia/Makassar">WITA – Waktu Indonesia Tengah (UTC+8)</option>
+            <option value="Asia/Jayapura">WIT – Waktu Indonesia Timur (UTC+9)</option>
+            <option value="Asia/Singapore">Singapura / Malaysia (UTC+8)</option>
+            <option value="UTC">UTC (UTC+0)</option>
+          </FormSelect>
           {isAdmin && (
             <Button
               variant="primary"
-              onClick={() => save('perusahaan', ['companyName','companyAddress','companyPhone','companyEmail','companyNpwp'])}
+              onClick={() => save('perusahaan', ['companyName','companyAddress','companyPhone','companyEmail','companyNpwp','timezone'])}
               disabled={saving === 'perusahaan'}
             >
               {saving === 'perusahaan' ? 'Menyimpan...' : 'Simpan'}

@@ -38,11 +38,12 @@ export const authAPI = {
 
 // ─── Customers ───
 export const customerAPI = {
-  getAll:  (params)    => api.get('/customers', { params }),
-  getById: (id)        => api.get(`/customers/${id}`),
-  create:  (data)      => api.post('/customers', data),
-  update:  (id, data)  => api.put(`/customers/${id}`, data),
-  remove:  (id)        => api.delete(`/customers/${id}`),
+  getAll:     (params)   => api.get('/customers', { params }),
+  getById:    (id)       => api.get(`/customers/${id}`),
+  nextMeter:  ()         => api.get('/customers/next-meter'),
+  create:     (data)     => api.post('/customers', data),
+  update:     (id, data) => api.put(`/customers/${id}`, data),
+  remove:     (id)       => api.delete(`/customers/${id}`),
 }
 
 // ─── Readings ───
