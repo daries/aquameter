@@ -323,7 +323,7 @@ function EditReadingModal({ reading, onSave, onClose }) {
                 type="number"
                 className={`form-input mono ${error ? 'error' : ''}`}
                 value={stand}
-                min={reading.lastStand + 1}
+                min={reading.lastStand}
                 onChange={e => { setStand(e.target.value); setError('') }}
                 autoFocus
               />
@@ -436,8 +436,8 @@ export default function Meters() {
     if (!photo) { showToast('Foto meter wajib diambil terlebih dahulu', 'error'); return }
     const val = parseFloat(currentStand)
     if (!currentStand || isNaN(val)) { setStandError('Masukkan angka stand meter'); return }
-    if (val <= customer.lastStand) {
-      setStandError(`Harus lebih besar dari stand lama (${customer.lastStand} m³)`)
+    if (val < customer.lastStand) {
+      setStandError(`Stand baru tidak boleh kurang dari stand lama (${customer.lastStand} m³)`)
       return
     }
     setStandError(''); setSaving(true)
@@ -560,8 +560,8 @@ export default function Meters() {
                         className={`form-input mono stand-input-lg ${standError ? 'error' : ''}`}
                         value={currentStand}
                         onChange={e => { setCurrentStand(e.target.value); setStandError('') }}
-                        placeholder={String(customer.lastStand + 1)}
-                        min={customer.lastStand + 1}
+                        placeholder={String(customer.lastStand)}
+                        min={customer.lastStand}
                         autoFocus
                       />
                       <span className="input-addon">m³</span>

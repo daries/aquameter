@@ -65,6 +65,7 @@ async function createMysqlDbAdapter(config) {
     ssl:                config.ssl ? {} : undefined,
     multipleStatements: true,
     charset:            'utf8mb4',
+    dateStrings:        true,
   })
   await conn.query("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci")
 
@@ -113,7 +114,12 @@ async function createMysqlDbAdapter(config) {
 // Uses a Pool so concurrent requests each get their own connection.
 // Transactions acquire a dedicated client from the pool for the duration.
 async function createPostgresDbAdapter(config) {
-  const { Pool } = require('pg')
+  const { Pool, types } = require('pg')
+  // Return DATE columns as plain string (YYYY-MM-DD), not JS Date objects
+  types.setTypeParser(1082, v => v)
+  // Return TIMESTAMP/TIMESTAMPTZ as string too
+  types.setTypeParser(1114, v => v)
+  types.setTypeParser(1184, v => v)
   const pool = new Pool({
     host:     config.host     || '127.0.0.1',
     port:     config.port     || 5432,

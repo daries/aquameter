@@ -5,6 +5,8 @@ import { getUser } from '../utils/auth'
 import { Card, Badge, Button, Tabs, Modal, FormInput, FormSelect, SearchInput, EmptyState, ConfirmDialog } from '../components/UI'
 import { fmtRupiah, fmtShort } from '../utils/tariff'
 
+const today = () => new Date().toLocaleDateString('sv-SE')
+
 function fmtDate(d) {
   if (!d) return '—'
   const dt = new Date(d + 'T00:00:00')
@@ -24,12 +26,12 @@ export default function Cashbook() {
   const [loading,       setLoading]       = useState(true)
   const [tab,           setTab]           = useState('all')
   const [search,        setSearch]        = useState('')
-  const [month,         setMonth]         = useState(new Date().toISOString().substring(0, 7))
+  const [month,         setMonth]         = useState(today().substring(0, 7))
 
   // Transaction form state
   const [txModalOpen, setTxModalOpen] = useState(false)
   const [txForm,      setTxForm]      = useState({
-    date: new Date().toISOString().split('T')[0],
+    date: today(),
     type: 'expense', category: '', description: '', amount: '',
   })
   const [txErrors,      setTxErrors]      = useState({})
@@ -92,7 +94,7 @@ export default function Cashbook() {
   const openAddTx = () => {
     const cats = expenseCategories
     setTxForm({
-      date: new Date().toISOString().split('T')[0],
+      date: today(),
       type: 'expense', category: cats[0] || '', description: '', amount: '',
     })
     setTxErrors({})

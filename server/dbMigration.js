@@ -547,6 +547,7 @@ async function createClient(config) {
       ssl: cfg.ssl ? {} : undefined,
       multipleStatements: true,
       charset: 'utf8mb4',
+      dateStrings: true,
     })
     return {
       engine: 'mysql',

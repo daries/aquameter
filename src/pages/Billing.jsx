@@ -10,10 +10,12 @@ export default function Billing() {
   const [bills, setBills]           = useState([])
   const [settings, setSettings]     = useState({})
   const [loading, setLoading]       = useState(true)
-  const [tab, setTab]               = useState('all')
+  const [tab, setTab]               = useState('unpaid')
   const [search, setSearch]         = useState('')
   const [selectedBill, setSelectedBill] = useState(null)
   const [photoPreview, setPhotoPreview] = useState(null)
+  const [page, setPage]               = useState(1)
+  const PAGE_SIZE = 20
   const loadedRef = useRef(false)
 
   const loadBills = async () => {
@@ -65,6 +67,12 @@ export default function Billing() {
     return matchTab && matchSearch
   })
 
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE)
+  const paginated  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+
+  const handleTabChange = (t) => { setTab(t); setPage(1) }
+  const handleSearch    = (v) => { setSearch(v); setPage(1) }
+
   const tabs = [
     { id: 'all',    label: 'Semua',       count: bills.length },
     { id: 'unpaid', label: 'Belum Lunas', count: bills.filter(b => b.status === 'unpaid').length },
@@ -96,12 +104,12 @@ export default function Billing() {
       {/* Toolbar */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, gap: 12 }}>
         <div style={{ flex: 1 }}>
-          <SearchInput value={search} onChange={setSearch} placeholder="Cari nama, no. tagihan..." />
+          <SearchInput value={search} onChange={handleSearch} placeholder="Cari nama, no. tagihan..." />
         </div>
         <span style={{ fontSize: 12, color: 'var(--text-hint)', whiteSpace: 'nowrap' }}>{filtered.length} tagihan</span>
       </div>
 
-      <Tabs tabs={tabs} active={tab} onChange={setTab} />
+      <Tabs tabs={tabs} active={tab} onChange={handleTabChange} />
 
       <Card padding={0}>
         {loading ? (
@@ -124,7 +132,7 @@ export default function Billing() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map(b => {
+                {paginated.map(b => {
                   const status = getBillStatus(b)
                   return (
                     <tr key={b.id}>
@@ -160,6 +168,15 @@ export default function Billing() {
                 })}
               </tbody>
             </table>
+          </div>
+        )}
+        {totalPages > 1 && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px 16px', borderTop: '1px solid var(--border)' }}>
+            <Button variant="ghost" size="sm" onClick={() => setPage(p => p - 1)} disabled={page === 1}>‹ Prev</Button>
+            <span style={{ fontSize: 13, color: 'var(--text-sec)' }}>
+              Hal. {page} / {totalPages} &nbsp;·&nbsp; {filtered.length} tagihan
+            </span>
+            <Button variant="ghost" size="sm" onClick={() => setPage(p => p + 1)} disabled={page === totalPages}>Next ›</Button>
           </div>
         )}
       </Card>
