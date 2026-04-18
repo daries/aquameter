@@ -6,9 +6,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "server": "node server/index.js",
+    "server": "node --env-file=.env server/index.js",
     "dev:full": "concurrently \"npm run dev\" \"npm run server\"",
-    "db:migrate": "node server/migrate.js"
+    "db:migrate": "node --env-file=.env server/migrate.js"
   },
   "dependencies": {
     "@whiskeysockets/baileys": "^6.17.16",
