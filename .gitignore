@@ -10,3 +10,4 @@ coverage/
 .vite/
 server/.wa_auth/
 server/db-config.json
+.htaccess

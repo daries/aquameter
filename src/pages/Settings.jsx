@@ -446,7 +446,7 @@ export default function Settings() {
               Template Pembacaan Meteran
             </div>
             <div style={{ fontSize: 11, color: 'var(--text-hint)', marginBottom: 6 }}>
-              Variabel: {'{nama}'} {'{bulan}'} {'{meter_awal}'} {'{meter_akhir}'} {'{pemakaian}'} {'{tagihan}'} {'{jatuh_tempo}'} {'{nama_perusahaan}'}
+              Variabel: {'{nama}'} {'{nomor_meter}'} {'{tanggal_baca}'} {'{bulan}'} {'{meter_awal}'} {'{meter_akhir}'} {'{pemakaian}'} {'{tagihan}'} {'{jatuh_tempo}'} {'{nama_perusahaan}'}
             </div>
             <textarea
               value={form.waTemplateReading || ''}
