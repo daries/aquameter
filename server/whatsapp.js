@@ -9,14 +9,119 @@ const qrcode = require('qrcode')
 const path   = require('path')
 const fs     = require('fs')
 
-const AUTH_DIR = path.join(__dirname, '.wa_auth')
+const AUTH_DIR  = path.join(__dirname, '.wa_auth')
+const MAX_QUEUE = 200   // simpan maks 200 item di memori
 
 let sock             = null
 let currentQR        = null
 let connectionStatus = 'disconnected'
 let reconnectTimer   = null
-let _messageHandler  = null   // dipasang dari index.js via onMessage()
+let _messageHandler  = null
 
+// ─── Queue ────────────────────────────────────────────────────────────────────
+const queue       = []   // { id, jid, phone, description, text, status, addedAt, sentAt, error }
+let isProcessing  = false
+
+function nextId() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+}
+
+function enqueue(recipient, text, description = '') {
+  const jid   = recipient.includes('@') ? recipient : formatJid(recipient)
+  const phone = jid.split('@')[0]
+  const item  = {
+    id: nextId(),
+    jid,
+    phone,
+    description,
+    text,
+    status:   'pending',
+    addedAt:  new Date().toISOString(),
+    sentAt:   null,
+    error:    null,
+  }
+  queue.push(item)
+  trimQueue()
+  processQueue()
+  return item.id
+}
+
+function trimQueue() {
+  if (queue.length <= MAX_QUEUE) return
+  // Hapus yang sudah sent/failed paling lama
+  const done = queue.filter(q => q.status === 'sent' || q.status === 'failed')
+  const keep = MAX_QUEUE - queue.filter(q => q.status === 'pending' || q.status === 'sending').length
+  const removeCount = queue.length - MAX_QUEUE
+  let removed = 0
+  for (let i = 0; i < queue.length && removed < removeCount; i++) {
+    if (queue[i].status === 'sent' || queue[i].status === 'failed') {
+      queue.splice(i, 1)
+      i--; removed++
+    }
+  }
+}
+
+async function processQueue() {
+  if (isProcessing) return
+  isProcessing = true
+  try {
+    while (true) {
+      const item = queue.find(q => q.status === 'pending')
+      if (!item) break
+
+      item.status = 'sending'
+
+      try {
+        if (!sock || connectionStatus !== 'connected') {
+          throw new Error('WhatsApp belum terhubung')
+        }
+        // Jeda awal sebelum buka chat (meniru perilaku manusia)
+        await randomDelay(2000, 5000)
+        await sendWithHumanDelay(item.jid, item.text)
+        item.status = 'sent'
+        item.sentAt = new Date().toISOString()
+        console.log(`✅ WA terkirim [${item.phone}]: ${item.description}`)
+      } catch (e) {
+        item.status = 'failed'
+        item.error  = e.message
+        console.error(`❌ WA gagal [${item.phone}]: ${e.message}`)
+      }
+
+      // Jeda antar pesan: 8–20 detik — lebih lama = lebih aman dari deteksi
+      const pending = queue.filter(q => q.status === 'pending')
+      if (pending.length > 0) {
+        await randomDelay(8000, 20000)
+      }
+    }
+  } finally {
+    isProcessing = false
+  }
+}
+
+function getQueue() {
+  // Kembalikan 100 item terbaru, terbaru di atas
+  return queue.slice(-100).reverse()
+}
+
+function clearDone() {
+  for (let i = queue.length - 1; i >= 0; i--) {
+    if (queue[i].status === 'sent' || queue[i].status === 'failed') {
+      queue.splice(i, 1)
+    }
+  }
+}
+
+function retryFailed() {
+  queue.forEach(q => {
+    if (q.status === 'failed') {
+      q.status = 'pending'
+      q.error  = null
+    }
+  })
+  processQueue()
+}
+
+// ─── Connection ───────────────────────────────────────────────────────────────
 function onMessage(handler) { _messageHandler = handler }
 
 function clearReconnect() {
@@ -37,40 +142,33 @@ async function connect() {
   sock = makeWASocket({
     version,
     auth:              state,
-    printQRInTerminal: true,   // juga cetak di terminal untuk debugging
+    printQRInTerminal: true,
     logger:            pino({ level: 'silent' }),
     browser:           ['AquaMeter', 'Chrome', '1.0.0'],
   })
 
   sock.ev.on('creds.update', saveCreds)
 
-  // ── Terima pesan masuk dari pelanggan ──
   sock.ev.on('messages.upsert', (upsert) => {
     const { messages, type } = upsert
-    console.log(`📬 messages.upsert type="${type}" count=${messages?.length}`)
     if (type !== 'notify') return
     for (const msg of messages) {
-      // Skip pesan dari diri sendiri, grup, atau tanpa konten
-      if (msg.key.fromMe)             continue
-      if (msg.key.remoteJid?.endsWith('@g.us')) continue
-      if (!msg.message)               continue
+      if (msg.key.fromMe)                        continue
+      if (msg.key.remoteJid?.endsWith('@g.us'))  continue
+      if (!msg.message)                          continue
 
       const jid   = msg.key.remoteJid
-      const phone = jid.split('@')[0].split(':')[0]  // strip device suffix: 628xxx:10 → 628xxx
+      const phone = jid.split('@')[0].split(':')[0]
       const text  =
         msg.message.conversation ||
         msg.message.extendedTextMessage?.text ||
         msg.message.imageMessage?.caption ||
         ''
 
-      console.log(`📩 Pesan masuk [${phone}]: "${text}" | handler: ${!!_messageHandler}`)
-
       if (text && _messageHandler) {
         _messageHandler(jid, phone, text).catch(e =>
-          console.error('Bot handler error:', e.message, e.stack)
+          console.error('Bot handler error:', e.message)
         )
-      } else if (!_messageHandler) {
-        console.warn('⚠️  _messageHandler belum terdaftar!')
       }
     }
   })
@@ -80,18 +178,15 @@ async function connect() {
 
     if (qr) {
       connectionStatus = 'qr'
-      try {
-        currentQR = await qrcode.toDataURL(qr, { width: 300, margin: 2 })
-        console.log('📷 QR code generated, panjang:', currentQR.length)
-      } catch (e) {
-        console.error('❌ qrcode.toDataURL gagal:', e.message)
-      }
+      try { currentQR = await qrcode.toDataURL(qr, { width: 300, margin: 2 }) } catch (_) {}
     }
 
     if (connection === 'open') {
       connectionStatus = 'connected'
       currentQR        = null
       console.log('✅ WhatsApp terhubung:', sock.user?.id)
+      // Lanjutkan antrian yang sempat tertunda
+      processQueue()
     }
 
     if (connection === 'close') {
@@ -100,12 +195,11 @@ async function connect() {
       connectionStatus  = 'disconnected'
       currentQR         = null
       sock              = null
-      console.log('⚠️  WhatsApp terputus, kode:', code, isLoggedOut ? '(logout)' : '(reconnect)')
+      console.log('⚠️  WA terputus, kode:', code)
 
       if (isLoggedOut) {
         try { fs.rmSync(AUTH_DIR, { recursive: true }) } catch (_) {}
       } else {
-        // Reconnect dengan jeda acak 5–12 detik agar tidak terlihat bot
         const delay = Math.floor(Math.random() * 7000) + 5000
         reconnectTimer = setTimeout(connect, delay)
       }
@@ -115,48 +209,40 @@ async function connect() {
 
 function getStatus() {
   return {
-    status: connectionStatus,
-    qr:     currentQR,
-    phone:  sock?.user?.id?.split(':')[0] || null,
+    status:     connectionStatus,
+    qr:         currentQR,
+    phone:      sock?.user?.id?.split(':')[0] || null,
+    queueStats: {
+      pending:  queue.filter(q => q.status === 'pending').length,
+      sending:  queue.filter(q => q.status === 'sending').length,
+      sent:     queue.filter(q => q.status === 'sent').length,
+      failed:   queue.filter(q => q.status === 'failed').length,
+    },
   }
 }
 
-// Delay acak antara min–max milidetik, meniru jeda manusia mengetik
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 function randomDelay(minMs = 2000, maxMs = 6000) {
   const ms = Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
-// Simulasi typing indicator sebelum kirim pesan
 async function sendWithHumanDelay(jid, text) {
-  // 1. Tandai "sedang mengetik" selama durasi acak
   await sock.sendPresenceUpdate('composing', jid)
-  // Kecepatan mengetik manusia: ~40–80 wpm → ~200–400ms per kata
   const wordCount    = text.split(/\s+/).length
   const typingMs     = Math.floor(wordCount * (Math.random() * 200 + 200))
-  const cappedTyping = Math.min(Math.max(typingMs, 1500), 8000) // min 1.5s, max 8s
+  const cappedTyping = Math.min(Math.max(typingMs, 1500), 8000)
   await randomDelay(cappedTyping, cappedTyping + Math.floor(Math.random() * 1500))
-
-  // 2. Stop typing sebentar (jeda "berpikir")
   await sock.sendPresenceUpdate('paused', jid)
   await randomDelay(300, 1200)
-
-  // 3. Kirim pesan
   await sock.sendMessage(jid, { text })
 }
 
-async function sendMessage(recipient, text) {
-  if (!sock || connectionStatus !== 'connected') {
-    throw new Error('WhatsApp belum terhubung')
-  }
-  // Jika recipient sudah berupa JID lengkap (ada '@'), pakai langsung
-  // Jika hanya nomor HP, format menjadi JID
-  const jid = recipient.includes('@') ? recipient : formatJid(recipient)
-
-  // Jeda awal acak sebelum mulai — meniru waktu buka chat
-  await randomDelay(1500, 4000)
-
-  await sendWithHumanDelay(jid, text)
+function formatJid(phone) {
+  let num = String(phone).split(':')[0].replace(/\D/g, '')
+  if (num.startsWith('0'))   num = '62' + num.slice(1)
+  if (!num.startsWith('62')) num = '62' + num
+  return num + '@s.whatsapp.net'
 }
 
 async function disconnect() {
@@ -170,12 +256,11 @@ async function disconnect() {
   currentQR        = null
 }
 
-function formatJid(phone) {
-  // Bersihkan dari device suffix (628xxx:10 → 628xxx) dan karakter non-digit
-  let num = String(phone).split(':')[0].replace(/\D/g, '')
-  if (num.startsWith('0'))   num = '62' + num.slice(1)
-  if (!num.startsWith('62')) num = '62' + num
-  return num + '@s.whatsapp.net'
+module.exports = {
+  connect, disconnect, onMessage,
+  getStatus,
+  enqueue,
+  getQueue, clearDone, retryFailed,
+  // backward-compat alias agar bot.js tetap jalan
+  sendMessage: (recipient, text) => enqueue(recipient, text, 'Bot reply'),
 }
-
-module.exports = { connect, getStatus, sendMessage, disconnect, onMessage }

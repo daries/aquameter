@@ -96,9 +96,12 @@ export const userAPI = {
 
 // ─── WhatsApp Bot ───
 export const waAPI = {
-  status:     ()     => api.get('/whatsapp/status'),
-  connect:    ()     => api.post('/whatsapp/connect'),
-  disconnect: ()     => api.post('/whatsapp/disconnect'),
+  status:      ()  => api.get('/whatsapp/status'),
+  connect:     ()  => api.post('/whatsapp/connect'),
+  disconnect:  ()  => api.post('/whatsapp/disconnect'),
+  getQueue:    ()  => api.get('/whatsapp/queue'),
+  clearDone:   ()  => api.post('/whatsapp/queue/clear'),
+  retryFailed: ()  => api.post('/whatsapp/queue/retry'),
 }
 
 // ─── Transaction Categories ───

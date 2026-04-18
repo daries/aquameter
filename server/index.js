@@ -252,7 +252,28 @@ router.patch('/readings/:id', async (req, res) => {
   const total    = cost + admin + ppj
 
   try {
-    res.json(await updateReadingAndBill(appDb, { reading, bill, newStand, usage, date, note, cost, ppj, total }))
+    const updated = await updateReadingAndBill(appDb, { reading, bill, newStand, usage, date, note, cost, ppj, total })
+
+    const sett = getSettings()
+    if (sett.waEnabled === 'true' && cust.phone) {
+      const readDate = date || reading.date
+      const bulan    = new Date(readDate + 'T00:00:00').toLocaleDateString('id-ID', { timeZone: getTimezone(), month: 'long', year: 'numeric' })
+      const billData = bill ? await getBillByCustomerPeriod(appDb, reading.cust_id, reading.period) : null
+      const msg = (sett.waTemplateReading || '')
+        .replace('{nama}',          cust.name)
+        .replace('{nomor_meter}',   cust.meter)
+        .replace('{bulan}',         bulan)
+        .replace('{tanggal_baca}',  readDate)
+        .replace('{meter_awal}',    reading.last_stand)
+        .replace('{meter_akhir}',   newStand)
+        .replace('{pemakaian}',     usage)
+        .replace('{tagihan}',       billData ? Number(billData.total).toLocaleString('id-ID') : '—')
+        .replace('{jatuh_tempo}',   billData ? billData.due_date : '—')
+        .replace('{nama_perusahaan}', sett.companyName || 'PAMSIMAS')
+      wa.enqueue(cust.phone, msg, `Revisi baca meter – ${cust.name}`)
+    }
+
+    res.json(updated)
   } catch (error) {
     res.status(500).json({ error: error.message })
   }
@@ -312,7 +333,7 @@ router.post('/readings', async (req, res) => {
         .replace('{tagihan}',       bill ? Number(bill.total).toLocaleString('id-ID') : '—')
         .replace('{jatuh_tempo}',   bill ? bill.due_date : '—')
         .replace('{nama_perusahaan}', sett.companyName || 'PAMSIMAS')
-      wa.sendMessage(cust.phone, msg).catch(e => console.error('WA reading notif error:', e.message))
+      wa.enqueue(cust.phone, msg, `Notif baca meter – ${cust.name}`)
     }
 
     res.status(201).json({ reading: result.reading, bill: result.bill })
@@ -355,12 +376,13 @@ router.patch('/bills/:id/pay', async (req, res) => {
       const bulan  = bill.period
       const msg    = (settWA.waTemplatePayment || '')
         .replace('{nama}',            custWA.name)
+        .replace('{nomor_meter}',     custWA.meter)
         .replace('{invoice}',         bill.invoice_no)
         .replace('{bulan}',           bulan)
         .replace('{jumlah}',          Number(bill.total).toLocaleString('id-ID'))
         .replace('{tgl_bayar}',       formatLongDate(getTimezone()))
         .replace('{nama_perusahaan}', settWA.companyName || 'PAMSIMAS')
-      wa.sendMessage(custWA.phone, msg).catch(e => console.error('WA payment notif error:', e.message))
+      wa.enqueue(custWA.phone, msg, `Konfirmasi bayar – ${custWA.name}`)
     }
 
     res.json(mapBill(row))
@@ -651,7 +673,7 @@ router.post('/installations', requireAuth, async (req, res) => {
         .replace('{no_daftar}', `PB-${String(row.id).padStart(4, '0')}`)
         .replace('{tanggal}', formatLongDate(getTimezone()))
         .replace('{nama_perusahaan}', sett.companyName || 'PAMSIMAS')
-      wa.sendMessage(phone, msg).catch(e => console.error('WA install pending error:', e.message))
+      wa.enqueue(phone, msg, `Notif daftar pasang baru – ${name}`)
     }
     res.status(201).json(row)
   } catch (error) {
@@ -691,7 +713,7 @@ router.patch('/installations/:id/invoice', requireAdmin, async (req, res) => {
         .replace('{biaya_admin}', Number(adminFee).toLocaleString('id-ID'))
         .replace('{total}', Number(totalFee).toLocaleString('id-ID'))
         .replace('{nama_perusahaan}', sett.companyName || 'PAMSIMAS')
-      wa.sendMessage(inst.phone, msg).catch(e => console.error('WA install invoice error:', e.message))
+      wa.enqueue(inst.phone, msg, `Invoice pasang baru – ${inst.name}`)
     }
     res.json(updated)
   } catch (error) {
@@ -715,7 +737,7 @@ router.patch('/installations/:id/pay', requireAdmin, async (req, res) => {
         .replace('{total}', Number(inst.total_fee).toLocaleString('id-ID'))
         .replace('{tgl_bayar}', formatLongDate(getTimezone()))
         .replace('{nama_perusahaan}', sett.companyName || 'PAMSIMAS')
-      wa.sendMessage(inst.phone, msg).catch(e => console.error('WA install paid error:', e.message))
+      wa.enqueue(inst.phone, msg, `Konfirmasi bayar pasang – ${inst.name}`)
     }
     res.json(updated)
   } catch (error) {
@@ -740,7 +762,7 @@ router.patch('/installations/:id/install', requireAdmin, async (req, res) => {
         .replace('{meter}', meterNo)
         .replace('{tgl_pasang}', formatLongDate(getTimezone()))
         .replace('{nama_perusahaan}', sett.companyName || 'PAMSIMAS')
-      wa.sendMessage(inst.phone, msg).catch(e => console.error('WA install done error:', e.message))
+      wa.enqueue(inst.phone, msg, `Notif selesai pasang – ${inst.name}`)
     }
     res.json(updated)
   } catch (error) {
@@ -807,6 +829,20 @@ router.delete('/transactions/:id', async (req, res) => {
 // ─── WhatsApp Bot Routes (protected) ───
 app.get('/api/whatsapp/status', requireAuth, (_req, res) => {
   res.json(wa.getStatus())
+})
+
+app.get('/api/whatsapp/queue', requireAuth, (_req, res) => {
+  res.json(wa.getQueue())
+})
+
+app.post('/api/whatsapp/queue/clear', requireAuth, requireAdmin, (_req, res) => {
+  wa.clearDone()
+  res.json({ ok: true })
+})
+
+app.post('/api/whatsapp/queue/retry', requireAuth, requireAdmin, (_req, res) => {
+  wa.retryFailed()
+  res.json({ ok: true })
 })
 
 // ─── Ticket Statuses ───

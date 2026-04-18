@@ -47,17 +47,25 @@ export default function Settings() {
   const loadedRef = useRef(false)
 
   // WhatsApp state
-  const [waStatus,     setWaStatus]     = useState({ status: 'disconnected', qr: null, phone: null })
+  const [waStatus,     setWaStatus]     = useState({ status: 'disconnected', qr: null, phone: null, queueStats: null })
   const [waConnecting, setWaConnecting] = useState(false)
+  const [waQueue,      setWaQueue]      = useState([])
+  const [showQueue,    setShowQueue]    = useState(false)
   const waPollerRef = useRef(null)
+  const queuePollerRef = useRef(null)
 
-  const pollWA = () => waAPI.status().then(setWaStatus).catch(() => {})
+  const pollWA    = () => waAPI.status().then(setWaStatus).catch(() => {})
+  const pollQueue = () => waAPI.getQueue().then(setWaQueue).catch(() => {})
 
   useEffect(() => {
     pollWA()
-    // Poll tiap 2 detik agar QR tidak ketinggalan
-    waPollerRef.current = setInterval(pollWA, 2000)
-    return () => clearInterval(waPollerRef.current)
+    pollQueue()
+    waPollerRef.current    = setInterval(pollWA,    2000)
+    queuePollerRef.current = setInterval(pollQueue, 4000)
+    return () => {
+      clearInterval(waPollerRef.current)
+      clearInterval(queuePollerRef.current)
+    }
   }, [])
 
   useEffect(() => {
@@ -480,7 +488,7 @@ export default function Settings() {
               Template Pelunasan Tagihan
             </div>
             <div style={{ fontSize: 11, color: 'var(--text-hint)', marginBottom: 6 }}>
-              Variabel: {'{nama}'} {'{invoice}'} {'{bulan}'} {'{jumlah}'} {'{tgl_bayar}'} {'{nama_perusahaan}'}
+              Variabel: {'{nama}'} {'{nomor_meter}'} {'{invoice}'} {'{bulan}'} {'{jumlah}'} {'{tgl_bayar}'} {'{nama_perusahaan}'}
             </div>
             <textarea
               value={form.waTemplatePayment || ''}
@@ -534,6 +542,66 @@ export default function Settings() {
               {saving === 'WhatsApp' ? 'Menyimpan...' : 'Simpan Pengaturan WA'}
             </Button>
           </div>
+        )}
+      </Card>
+
+      {/* ── Antrian Pesan WhatsApp ── */}
+      <Card style={{ marginTop: 0 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <div>
+            <div className="card-title" style={{ marginBottom: 2 }}>📬 Antrian Pesan WhatsApp</div>
+            <div style={{ fontSize: 11, color: 'var(--text-hint)' }}>
+              {waStatus.queueStats
+                ? `${waStatus.queueStats.pending} menunggu · ${waStatus.queueStats.sending} proses · ${waStatus.queueStats.sent} terkirim · ${waStatus.queueStats.failed} gagal`
+                : 'Memuat...'
+              }
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {isAdmin && waQueue.some(q => q.status === 'failed') && (
+              <Button variant="ghost" size="sm" onClick={async () => { await waAPI.retryFailed(); pollQueue() }}>↺ Coba Ulang</Button>
+            )}
+            {isAdmin && waQueue.some(q => q.status === 'sent' || q.status === 'failed') && (
+              <Button variant="ghost" size="sm" onClick={async () => { await waAPI.clearDone(); pollQueue() }}>🗑 Bersihkan</Button>
+            )}
+            <Button variant="ghost" size="sm" onClick={() => setShowQueue(p => !p)}>
+              {showQueue ? 'Sembunyikan' : 'Tampilkan'} ({waQueue.length})
+            </Button>
+          </div>
+        </div>
+
+        {showQueue && (
+          waQueue.length === 0 ? (
+            <div style={{ textAlign: 'center', color: 'var(--text-hint)', fontSize: 13, padding: '16px 0' }}>Antrian kosong</div>
+          ) : (
+            <div style={{ maxHeight: 340, overflowY: 'auto' }}>
+              {waQueue.map(q => {
+                const statusMap = {
+                  pending: { label: 'Menunggu', color: 'var(--warning)',  bg: 'var(--warning-bg)'  },
+                  sending: { label: 'Mengirim', color: 'var(--ocean)',    bg: 'var(--ocean-pale)'  },
+                  sent:    { label: 'Terkirim', color: 'var(--mint)',     bg: 'var(--success-bg)'  },
+                  failed:  { label: 'Gagal',    color: 'var(--danger)',   bg: 'var(--danger-bg)'   },
+                }
+                const s = statusMap[q.status] || statusMap.pending
+                return (
+                  <div key={q.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: s.color, background: s.bg, borderRadius: 6, padding: '2px 8px', whiteSpace: 'nowrap', marginTop: 1 }}>
+                      {s.label}
+                    </span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{q.description}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-hint)' }}>
+                        {q.phone}
+                        {q.sentAt && ` · ${new Date(q.sentAt).toLocaleTimeString('id-ID')}`}
+                        {!q.sentAt && q.addedAt && ` · ditambah ${new Date(q.addedAt).toLocaleTimeString('id-ID')}`}
+                      </div>
+                      {q.error && <div style={{ fontSize: 11, color: 'var(--danger)', marginTop: 2 }}>{q.error}</div>}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )
         )}
       </Card>
 
