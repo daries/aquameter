@@ -180,6 +180,13 @@ CREATE TABLE IF NOT EXISTS ticket_updates (
 );
 `
 
+// MySQL 5.6 compatibility notes:
+// - TIMESTAMP is used for created_at (DATETIME DEFAULT CURRENT_TIMESTAMP requires 5.6.5+)
+// - tickets has two TIMESTAMP DEFAULT CURRENT_TIMESTAMP columns (requires MySQL 5.6.5+)
+// - ENGINE=InnoDB + utf8mb4 + COLLATE are explicit so server defaults don't matter
+// - join_date has DEFAULT '2000-01-01' as fallback; app always sets the real date
+// - Reserved-word columns (key, date, usage) are backtick-quoted here and auto-escaped
+//   by escapeMysql56() in the adapter for runtime queries
 const MYSQL_SCHEMA = `
 CREATE TABLE IF NOT EXISTS users (
   id INT AUTO_INCREMENT PRIMARY KEY,
@@ -187,13 +194,13 @@ CREATE TABLE IF NOT EXISTS users (
   password VARCHAR(255) NOT NULL,
   full_name VARCHAR(255) NOT NULL,
   role VARCHAR(50) NOT NULL DEFAULT 'petugas'
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 CREATE TABLE IF NOT EXISTS sessions (
   token VARCHAR(191) PRIMARY KEY,
   user_id INT NOT NULL,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_sessions_user FOREIGN KEY (user_id) REFERENCES users(id)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 CREATE TABLE IF NOT EXISTS customers (
   id INT AUTO_INCREMENT PRIMARY KEY,
   name VARCHAR(255) NOT NULL,
@@ -204,9 +211,9 @@ CREATE TABLE IF NOT EXISTS customers (
   phone VARCHAR(50),
   last_stand DOUBLE NOT NULL DEFAULT 0,
   status VARCHAR(50) NOT NULL DEFAULT 'active',
-  join_date DATE NOT NULL,
+  join_date DATE NOT NULL DEFAULT '2000-01-01',
   wa_jid VARCHAR(191)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 CREATE TABLE IF NOT EXISTS readings (
   id INT AUTO_INCREMENT PRIMARY KEY,
   cust_id INT NOT NULL,
@@ -216,10 +223,10 @@ CREATE TABLE IF NOT EXISTS readings (
   \`date\` DATE NOT NULL,
   note TEXT,
   period VARCHAR(50) NOT NULL,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   photo MEDIUMTEXT,
   CONSTRAINT fk_readings_customer FOREIGN KEY (cust_id) REFERENCES customers(id)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 CREATE TABLE IF NOT EXISTS bills (
   id INT AUTO_INCREMENT PRIMARY KEY,
   cust_id INT NOT NULL,
@@ -234,20 +241,20 @@ CREATE TABLE IF NOT EXISTS bills (
   due_date DATE,
   status VARCHAR(50) NOT NULL DEFAULT 'unpaid',
   paid_date DATE,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_bills_customer FOREIGN KEY (cust_id) REFERENCES customers(id)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 CREATE TABLE IF NOT EXISTS settings (
   ` + '`key`' + ` VARCHAR(191) PRIMARY KEY,
   value TEXT NOT NULL
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 CREATE TABLE IF NOT EXISTS tariffs (
   grp VARCHAR(50) NOT NULL,
   blk_order INT NOT NULL,
   limit_m3 DOUBLE NULL,
   price DOUBLE NOT NULL,
   PRIMARY KEY (grp, blk_order)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 CREATE TABLE IF NOT EXISTS installations (
   id INT AUTO_INCREMENT PRIMARY KEY,
   name VARCHAR(255) NOT NULL,
@@ -267,15 +274,15 @@ CREATE TABLE IF NOT EXISTS installations (
   installed_date DATE,
   meter_no VARCHAR(191),
   cust_id INT NULL,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_installations_customer FOREIGN KEY (cust_id) REFERENCES customers(id)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 CREATE TABLE IF NOT EXISTS transaction_categories (
   id INT AUTO_INCREMENT PRIMARY KEY,
   \`type\` VARCHAR(50) NOT NULL,
   name VARCHAR(191) NOT NULL,
   UNIQUE KEY uniq_transaction_category (\`type\`, name)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 CREATE TABLE IF NOT EXISTS transactions (
   id INT AUTO_INCREMENT PRIMARY KEY,
   \`date\` DATE NOT NULL,
@@ -284,9 +291,9 @@ CREATE TABLE IF NOT EXISTS transactions (
   description TEXT NOT NULL,
   amount DOUBLE NOT NULL,
   ref_bill_id INT NULL,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_transactions_bill FOREIGN KEY (ref_bill_id) REFERENCES bills(id)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 CREATE TABLE IF NOT EXISTS ticket_statuses (
   id INT AUTO_INCREMENT PRIMARY KEY,
   ` + '`key`' + ` VARCHAR(191) NOT NULL UNIQUE,
@@ -296,12 +303,12 @@ CREATE TABLE IF NOT EXISTS ticket_statuses (
   sort_order INT NOT NULL DEFAULT 0,
   is_default TINYINT(1) NOT NULL DEFAULT 0,
   is_active TINYINT(1) NOT NULL DEFAULT 1
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 CREATE TABLE IF NOT EXISTS ticket_categories (
   id INT AUTO_INCREMENT PRIMARY KEY,
   name VARCHAR(191) NOT NULL UNIQUE,
   is_active TINYINT(1) NOT NULL DEFAULT 1
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 CREATE TABLE IF NOT EXISTS tickets (
   id INT AUTO_INCREMENT PRIMARY KEY,
   ticket_no VARCHAR(191) NOT NULL UNIQUE,
@@ -314,20 +321,20 @@ CREATE TABLE IF NOT EXISTS tickets (
   status VARCHAR(50) NOT NULL DEFAULT 'open',
   assigned_to VARCHAR(191),
   notes TEXT,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   resolved_at DATETIME NULL,
   CONSTRAINT fk_tickets_customer FOREIGN KEY (cust_id) REFERENCES customers(id)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 CREATE TABLE IF NOT EXISTS ticket_updates (
   id INT AUTO_INCREMENT PRIMARY KEY,
   ticket_id INT NOT NULL,
   status VARCHAR(50) NOT NULL,
   note TEXT,
   created_by VARCHAR(191) NOT NULL,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_ticket_updates_ticket FOREIGN KEY (ticket_id) REFERENCES tickets(id) ON DELETE CASCADE
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 `
 
 const POSTGRES_SCHEMA = `
@@ -539,6 +546,7 @@ async function createClient(config) {
       database: cfg.database,
       ssl: cfg.ssl ? {} : undefined,
       multipleStatements: true,
+      charset: 'utf8mb4',
     })
     return {
       engine: 'mysql',

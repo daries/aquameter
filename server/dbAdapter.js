@@ -38,6 +38,18 @@ function convertPgPlaceholders(sql) {
   return sql.replace(/\?/g, () => `$${++i}`)
 }
 
+// ─── MySQL 5.6 reserved-word escaper ───
+// Columns named `key`, `date`, `usage` are MySQL reserved words.
+// Applied to get/all/run (runtime queries) only — NOT exec (schema already uses backticks).
+// Safe because no runtime query in the services uses already-backtick-quoted identifiers.
+// Uses simple word-boundary regex (no lookbehind) for compatibility with older Node.js.
+function escapeMysql56(sql) {
+  return sql
+    .replace(/\bkey\b/gi,   '`key`')
+    .replace(/\bdate\b/gi,  '`date`')
+    .replace(/\busage\b/gi, '`usage`')
+}
+
 // ─── MySQL / MariaDB Adapter ───
 // MariaDB menggunakan protokol yang sama dengan MySQL — driver mysql2 bisa dipakai.
 // Pakai conn.query() (text protocol) bukan execute() (prepared statements)
@@ -52,7 +64,9 @@ async function createMysqlDbAdapter(config) {
     database:           config.database || 'aquameter',
     ssl:                config.ssl ? {} : undefined,
     multipleStatements: true,
+    charset:            'utf8mb4',
   })
+  await conn.query("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci")
 
   function buildResult(r) {
     return { lastInsertRowid: r.insertId || null, changes: r.affectedRows }
@@ -60,15 +74,15 @@ async function createMysqlDbAdapter(config) {
 
   // query() (text protocol) lebih kompatibel dengan MariaDB daripada execute()
   async function get(sql, params = []) {
-    const [rows] = await conn.query(sql, params)
+    const [rows] = await conn.query(escapeMysql56(sql), params)
     return rows[0] || null
   }
   async function all(sql, params = []) {
-    const [rows] = await conn.query(sql, params)
+    const [rows] = await conn.query(escapeMysql56(sql), params)
     return rows
   }
   async function run(sql, params = []) {
-    const [r] = await conn.query(sql, params)
+    const [r] = await conn.query(escapeMysql56(sql), params)
     return buildResult(r)
   }
   async function exec(sql) {
@@ -78,9 +92,9 @@ async function createMysqlDbAdapter(config) {
     await conn.beginTransaction()
     try {
       const tx = {
-        get:  (s, p = []) => conn.query(s, p).then(([r]) => r[0] || null),
-        all:  (s, p = []) => conn.query(s, p).then(([r]) => r),
-        run:  (s, p = []) => conn.query(s, p).then(([r]) => buildResult(r)),
+        get:  (s, p = []) => conn.query(escapeMysql56(s), p).then(([r]) => r[0] || null),
+        all:  (s, p = []) => conn.query(escapeMysql56(s), p).then(([r]) => r),
+        run:  (s, p = []) => conn.query(escapeMysql56(s), p).then(([r]) => buildResult(r)),
         exec: (s)         => conn.query(s).then(() => {}),
       }
       const result = await fn(tx)

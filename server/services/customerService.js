@@ -36,10 +36,11 @@ async function getCustomerRowById(db, id) {
 }
 
 async function createCustomer(db, payload) {
+  const joinDate = payload.joinDate || new Date().toISOString().split('T')[0]
   const result = await db.run(`
-    INSERT INTO customers (name, ktp, meter, grp, address, phone, last_stand)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `, [payload.name, payload.ktp, payload.meter, payload.group || 'R1', payload.address, payload.phone, payload.lastStand || 0])
+    INSERT INTO customers (name, ktp, meter, grp, address, phone, last_stand, join_date)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `, [payload.name, payload.ktp, payload.meter, payload.group || 'R1', payload.address, payload.phone, payload.lastStand || 0, joinDate])
   return await getCustomerById(db, result.lastInsertRowid)
 }
 
