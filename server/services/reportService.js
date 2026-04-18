@@ -22,6 +22,7 @@ async function getSummaryReport(db, today) {
       SUM(usage) as total_volume,
       SUM(total) as total_billed,
       SUM(CASE WHEN status='paid' THEN total ELSE 0 END) as total_paid,
+      SUM(CASE WHEN status!='paid' THEN total ELSE 0 END) as unpaid_amount,
       SUM(CASE WHEN status='overdue' OR (status='unpaid' AND due_date < ?) THEN total ELSE 0 END) as overdue_amount,
       COUNT(CASE WHEN status!='paid' THEN 1 END) as unpaid_count
     FROM bills

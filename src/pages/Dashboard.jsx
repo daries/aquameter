@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts'
 import { useStore } from '../store'
-import { reportAPI, billAPI, readingAPI, customerAPI, transactionAPI } from '../utils/api'
+import { reportAPI, billAPI, readingAPI, transactionAPI } from '../utils/api'
 import { StatCard, Card, Badge, Button } from '../components/UI'
 import { InvoiceModal } from '../components/InvoiceModal'
 import { fmtRupiah, fmtShort, getBillStatus } from '../utils/tariff'
@@ -33,13 +33,13 @@ export default function Dashboard() {
   const [monthly,      setMonthly]      = useState([])
   const [unpaidBills,  setUnpaidBills]  = useState([])
   const [recentReads,  setRecentReads]  = useState([])
-  const [customers,    setCustomers]    = useState([])
+  const [totalCust,    setTotalCust]    = useState(0)
   const [kasMonth,     setKasMonth]     = useState(null)   // buku kas bulan ini
   const [recentTx,     setRecentTx]     = useState([])     // transaksi kas terbaru
   const [loading,      setLoading]      = useState(true)
   const loadedRef = useRef(false)
 
-  const thisMonth = new Date().toISOString().substring(0, 7)
+  const thisMonth = new Date().toLocaleDateString('sv-SE').substring(0, 7)
   const thisYear  = new Date().getFullYear()
 
   useEffect(() => {
@@ -51,15 +51,14 @@ export default function Dashboard() {
       reportAPI.monthly(thisYear),
       billAPI.getAll({ status: 'unpaid', limit: 10 }),
       readingAPI.getAll({ limit: 6 }),
-      customerAPI.getAll({ status: 'active' }),
       transactionAPI.getSummary({ month: thisMonth }),
       transactionAPI.getAll({ month: thisMonth, limit: 5 }),
-    ]).then(([sum, mon, unpaid, reads, custs, kas, txs]) => {
+    ]).then(([sum, mon, unpaid, reads, kas, txs]) => {
       setSummary(sum)
       setMonthly(mon)
       setUnpaidBills(unpaid)
       setRecentReads(reads)
-      setCustomers(custs)
+      setTotalCust(sum?.active_customers || 0)
       setKasMonth(kas)
       setRecentTx(txs)
     }).catch(e => showToast(e.message, 'error'))
@@ -79,7 +78,7 @@ export default function Dashboard() {
 
   // Stats dari summary API
   const totalVolume    = summary?.total_volume   || 0
-  const totalPiutang   = summary?.overdue_amount || 0
+  const totalPiutang   = summary?.unpaid_amount  || 0
   const unpaidCount    = summary?.unpaid_count   || 0
 
   // Bulan ini dari monthly
@@ -95,7 +94,6 @@ export default function Dashboard() {
 
   // Meter progress bulan ini
   const readThisMonth = monthly.find(m => m.period_key === thisMonth)?.bill_count || 0
-  const totalCust     = customers.length
 
   if (loading) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-sec)' }}>Memuat dashboard...</div>
 
