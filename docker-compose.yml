@@ -1,0 +1,140 @@
+version: "3.9"
+
+# Semua service satu network — koneksi pakai nama service, bukan IP.
+# Nama service = hostname yang bisa dipakai di db-config.json:
+#   MySQL    → host: mysql
+#   Postgres → host: postgres
+
+networks:
+  aquameter_net:
+    driver: bridge
+
+# ── Default: SQLite (standalone) ──────────────────────────────────────────────
+services:
+  aquameter:
+    build: .
+    image: aquameter:latest
+    container_name: aquameter
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3001}:3001"
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DATA_DIR: /data
+    volumes:
+      - aquameter_data:/data
+    networks:
+      - aquameter_net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # ── Profil MySQL: docker compose --profile mysql up ───────────────────────
+  aquameter-mysql:
+    build: .
+    image: aquameter:latest
+    container_name: aquameter-mysql
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3001}:3001"
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DATA_DIR: /data
+    volumes:
+      - aquameter_data_mysql:/data
+    networks:
+      - aquameter_net
+    depends_on:
+      mysql:
+        condition: service_healthy
+    profiles: [mysql]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  mysql:
+    image: mysql:8.0
+    container_name: aquameter-db-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-aquameter}
+      MYSQL_USER: ${MYSQL_USER:-aquameter}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-aquameter123}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - aquameter_net
+    # Port 3306 hanya untuk akses dari host (misal DBeaver/phpMyAdmin)
+    # Antar container: pakai hostname "mysql" port 3306 tanpa expose
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-rootpassword}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    profiles: [mysql]
+
+  # ── Profil PostgreSQL: docker compose --profile postgres up ───────────────
+  aquameter-postgres:
+    build: .
+    image: aquameter:latest
+    container_name: aquameter-postgres
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3001}:3001"
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DATA_DIR: /data
+    volumes:
+      - aquameter_data_pg:/data
+    networks:
+      - aquameter_net
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles: [postgres]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: aquameter-db-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-aquameter}
+      POSTGRES_USER: ${POSTGRES_USER:-aquameter}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aquameter123}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - aquameter_net
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aquameter} -d ${POSTGRES_DB:-aquameter}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    profiles: [postgres]
+
+volumes:
+  aquameter_data:
+  aquameter_data_mysql:
+  aquameter_data_pg:
+  mysql_data:
+  postgres_data:

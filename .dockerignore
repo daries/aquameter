@@ -1,0 +1,16 @@
+node_modules
+dist
+dev-dist
+.env
+*.db
+*.db-shm
+*.db-wal
+.DS_Store
+*.log
+coverage
+.vite
+server/.wa_auth
+server/db-config.json
+migrate_pelanggan.sql
+.git
+.gitignore

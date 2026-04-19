@@ -1,8 +1,10 @@
 const fs = require('fs')
 const path = require('path')
 
-const CONFIG_PATH = path.join(__dirname, 'db-config.json')
-const DEFAULT_SQLITE_PATH = path.join(__dirname, 'aquameter.db')
+// DATA_DIR env var dipakai saat deploy Docker agar data persisten di volume
+const DATA_DIR            = process.env.DATA_DIR || __dirname
+const CONFIG_PATH         = path.join(DATA_DIR, 'db-config.json')
+const DEFAULT_SQLITE_PATH = process.env.DB_PATH || path.join(DATA_DIR, 'aquameter.db')
 
 const DEFAULT_MYSQL_PROFILE   = { engine: 'mysql',    host: '127.0.0.1', port: 3306, user: '', password: '', database: 'aquameter', ssl: false }
 const DEFAULT_MARIADB_PROFILE = { engine: 'mariadb',  host: '127.0.0.1', port: 3306, user: '', password: '', database: 'aquameter', ssl: false }

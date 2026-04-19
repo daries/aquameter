@@ -108,6 +108,101 @@ Profil koneksi juga bisa diatur dari menu `Settings -> Database & Migrasi`.
 
 ---
 
+## 🐳 Deploy dengan Docker
+
+### Prasyarat
+- [Docker](https://docs.docker.com/get-docker/) & Docker Compose v2
+
+### SQLite (Paling Simpel)
+
+Tidak perlu database eksternal. Data disimpan di Docker volume.
+
+```bash
+# Clone & masuk ke folder proyek
+git clone <repo-url> aquameter && cd aquameter
+
+# Jalankan
+docker compose up -d
+
+# Akses aplikasi
+# http://localhost:3001
+```
+
+---
+
+### MySQL
+
+```bash
+# Salin file konfigurasi (opsional, untuk custom password)
+cp .env.example .env
+
+# Jalankan dengan profil MySQL
+docker compose --profile mysql up -d
+```
+
+Setelah container jalan:
+1. Buka `http://localhost:3001`
+2. Masuk ke **Settings → Database & Migrasi**
+3. Isi koneksi MySQL: host `mysql`, port `3306`, user/password sesuai `.env`
+4. Klik **Test Koneksi** lalu **Jalankan Migrasi**
+
+---
+
+### PostgreSQL
+
+```bash
+cp .env.example .env
+
+docker compose --profile postgres up -d
+```
+
+Setelah container jalan, konfigurasi di **Settings → Database** dengan host `postgres`, port `5432`.
+
+---
+
+### Kustomisasi Port
+
+```bash
+PORT=8080 docker compose up -d
+```
+
+---
+
+### Perintah Berguna
+
+```bash
+# Lihat log
+docker compose logs -f aquameter
+
+# Restart
+docker compose restart aquameter
+
+# Hentikan semua
+docker compose down
+
+# Hapus termasuk data (HATI-HATI: data hilang)
+docker compose down -v
+
+# Build ulang setelah update kode
+docker compose build --no-cache && docker compose up -d
+```
+
+---
+
+### Struktur Volume
+
+| Volume | Isi |
+|---|---|
+| `aquameter_data` | Database SQLite, `db-config.json`, sesi WhatsApp |
+
+Untuk backup data SQLite:
+```bash
+docker run --rm -v aquameter_aquameter_data:/data -v $(pwd):/backup \
+  alpine tar czf /backup/aquameter-backup.tar.gz /data
+```
+
+---
+
 ## 🏗 Tech Stack
 
 | Layer | Teknologi |

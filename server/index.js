@@ -88,7 +88,10 @@ const app = express()
 const PORT = process.env.PORT || 3001
 
 // ─── Middleware ───
-app.use(cors({ origin: ['http://localhost:5173', 'http://localhost:4173'] }))
+const corsOrigins = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(',').map(s => s.trim())
+  : ['http://localhost:5173', 'http://localhost:4173']
+app.use(cors({ origin: process.env.NODE_ENV === 'production' ? false : corsOrigins }))
 app.use(express.json({ limit: '15mb' }))
 app.use(express.urlencoded({ extended: true, limit: '15mb' }))
 
@@ -1067,7 +1070,8 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 // ─── Health check ───
-app.get('/health', (req, res) => res.json({ status: 'ok', time: new Date().toISOString() }))
+app.get('/health',     (req, res) => res.json({ status: 'ok', time: new Date().toISOString() }))
+app.get('/api/health', (req, res) => res.json({ status: 'ok', time: new Date().toISOString() }))
 
 // ─── Async startup ───────────────────────────────────────────────────────────
 async function startServer() {

@@ -9,7 +9,8 @@ const qrcode = require('qrcode')
 const path   = require('path')
 const fs     = require('fs')
 
-const AUTH_DIR  = path.join(__dirname, '.wa_auth')
+const DATA_DIR  = process.env.DATA_DIR || __dirname
+const AUTH_DIR  = path.join(DATA_DIR, '.wa_auth')
 const MAX_QUEUE = 200   // simpan maks 200 item di memori
 
 let sock             = null
