@@ -133,8 +133,16 @@ async function connect() {
   if (!fs.existsSync(AUTH_DIR)) fs.mkdirSync(AUTH_DIR, { recursive: true })
 
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR)
-  const { version }          = await fetchLatestBaileysVersion()
-  console.log('📱 WA version:', version)
+
+  // fetchLatestBaileysVersion bisa gagal jika Meta memblok request — fallback ke versi stabil
+  let version = [2, 3000, 1015901307]
+  try {
+    const res = await fetchLatestBaileysVersion()
+    version = res.version
+    console.log('📱 WA version:', version)
+  } catch (e) {
+    console.warn('⚠️  Gagal fetch WA version, pakai fallback:', version, '|', e.message)
+  }
 
   connectionStatus = 'connecting'
   currentQR        = null
@@ -150,59 +158,76 @@ async function connect() {
   sock.ev.on('creds.update', saveCreds)
 
   sock.ev.on('messages.upsert', (upsert) => {
-    const { messages, type } = upsert
-    if (type !== 'notify') return
-    for (const msg of messages) {
-      if (msg.key.fromMe)                        continue
-      if (msg.key.remoteJid?.endsWith('@g.us'))  continue
-      if (!msg.message)                          continue
+    try {
+      const { messages, type } = upsert
+      if (type !== 'notify') return
+      for (const msg of messages) {
+        if (msg.key.fromMe)                        continue
+        if (msg.key.remoteJid?.endsWith('@g.us'))  continue
+        if (!msg.message)                          continue
 
-      const jid   = msg.key.remoteJid
-      const phone = jid.split('@')[0].split(':')[0]
-      const text  =
-        msg.message.conversation ||
-        msg.message.extendedTextMessage?.text ||
-        msg.message.imageMessage?.caption ||
-        ''
+        const jid   = msg.key.remoteJid
+        const phone = jid.split('@')[0].split(':')[0]
+        const text  =
+          msg.message.conversation ||
+          msg.message.extendedTextMessage?.text ||
+          msg.message.imageMessage?.caption ||
+          ''
 
-      if (text && _messageHandler) {
-        _messageHandler(jid, phone, text).catch(e =>
-          console.error('Bot handler error:', e.message)
-        )
+        if (text && _messageHandler) {
+          _messageHandler(jid, phone, text).catch(e =>
+            console.error('Bot handler error:', e.message)
+          )
+        }
       }
+    } catch (e) {
+      console.error('messages.upsert error (diabaikan):', e.message)
     }
   })
 
   sock.ev.on('connection.update', async (update) => {
-    const { connection, lastDisconnect, qr } = update
+    try {
+      const { connection, lastDisconnect, qr } = update
 
-    if (qr) {
-      connectionStatus = 'qr'
-      try { currentQR = await qrcode.toDataURL(qr, { width: 300, margin: 2 }) } catch (_) {}
-    }
-
-    if (connection === 'open') {
-      connectionStatus = 'connected'
-      currentQR        = null
-      console.log('✅ WhatsApp terhubung:', sock.user?.id)
-      // Lanjutkan antrian yang sempat tertunda
-      processQueue()
-    }
-
-    if (connection === 'close') {
-      const code        = lastDisconnect?.error?.output?.statusCode
-      const isLoggedOut = code === DisconnectReason.loggedOut
-      connectionStatus  = 'disconnected'
-      currentQR         = null
-      sock              = null
-      console.log('⚠️  WA terputus, kode:', code)
-
-      if (isLoggedOut) {
-        try { fs.rmSync(AUTH_DIR, { recursive: true }) } catch (_) {}
-      } else {
-        const delay = Math.floor(Math.random() * 7000) + 5000
-        reconnectTimer = setTimeout(connect, delay)
+      if (qr) {
+        connectionStatus = 'qr'
+        try { currentQR = await qrcode.toDataURL(qr, { width: 300, margin: 2 }) } catch (_) {}
       }
+
+      if (connection === 'open') {
+        connectionStatus = 'connected'
+        currentQR        = null
+        console.log('✅ WhatsApp terhubung:', sock.user?.id)
+        processQueue()
+      }
+
+      if (connection === 'close') {
+        const code        = lastDisconnect?.error?.output?.statusCode
+        const isLoggedOut = code === DisconnectReason.loggedOut
+        connectionStatus  = 'disconnected'
+        currentQR         = null
+        sock              = null
+        console.log('⚠️  WA terputus, kode:', code)
+
+        // Tandai item yang sedang 'sending' sebagai failed agar antrian tidak stuck
+        queue.forEach(q => {
+          if (q.status === 'sending') { q.status = 'failed'; q.error = 'Koneksi WA terputus' }
+        })
+        isProcessing = false
+
+        if (isLoggedOut) {
+          try { fs.rmSync(AUTH_DIR, { recursive: true }) } catch (_) {}
+        } else {
+          // Backoff bertahap: reconnect semakin lambat jika terus gagal
+          const delay = Math.floor(Math.random() * 10000) + 8000
+          console.log(`🔄 Reconnect dalam ${Math.round(delay / 1000)}s...`)
+          reconnectTimer = setTimeout(() => connect().catch(e =>
+            console.error('Reconnect error:', e.message)
+          ), delay)
+        }
+      }
+    } catch (e) {
+      console.error('connection.update error (diabaikan):', e.message)
     }
   })
 }
@@ -228,13 +253,16 @@ function randomDelay(minMs = 2000, maxMs = 6000) {
 }
 
 async function sendWithHumanDelay(jid, text) {
-  await sock.sendPresenceUpdate('composing', jid)
+  if (!sock) throw new Error('WhatsApp belum terhubung')
+  // sendPresenceUpdate boleh gagal — tidak batalkan pengiriman
+  try { await sock.sendPresenceUpdate('composing', jid) } catch (_) {}
   const wordCount    = text.split(/\s+/).length
   const typingMs     = Math.floor(wordCount * (Math.random() * 200 + 200))
   const cappedTyping = Math.min(Math.max(typingMs, 1500), 8000)
   await randomDelay(cappedTyping, cappedTyping + Math.floor(Math.random() * 1500))
-  await sock.sendPresenceUpdate('paused', jid)
+  try { await sock.sendPresenceUpdate('paused', jid) } catch (_) {}
   await randomDelay(300, 1200)
+  if (!sock) throw new Error('WhatsApp terputus saat mengirim')
   await sock.sendMessage(jid, { text })
 }
 

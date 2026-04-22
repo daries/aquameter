@@ -87,6 +87,14 @@ const { initializeSqliteDatabase, initializeDatabaseAsync } = require('./bootstr
 const app = express()
 const PORT = process.env.PORT || 3001
 
+// ─── Global error handlers — cegah server crash dari unhandled error ───
+process.on('uncaughtException', (err) => {
+  console.error('❌ uncaughtException (server tetap jalan):', err.message)
+})
+process.on('unhandledRejection', (reason) => {
+  console.error('❌ unhandledRejection (server tetap jalan):', reason?.message || reason)
+})
+
 // ─── Middleware ───
 app.use(cors({ origin: ['http://localhost:5173', 'http://localhost:4173'] }))
 app.use(express.json({ limit: '15mb' }))
