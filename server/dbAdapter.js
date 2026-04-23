@@ -51,45 +51,59 @@ function escapeMysql56(sql) {
 }
 
 // ─── MySQL / MariaDB Adapter ───
-// MariaDB menggunakan protokol yang sama dengan MySQL — driver mysql2 bisa dipakai.
-// Pakai conn.query() (text protocol) bukan execute() (prepared statements)
-// agar kompatibel dengan semua versi MariaDB.
+// Gunakan Pool (bukan single connection) agar auto-reconnect saat koneksi drop.
+// query() (text protocol) lebih kompatibel dengan MariaDB daripada execute().
 async function createMysqlDbAdapter(config) {
   const mysql = require('mysql2/promise')
-  const conn = await mysql.createConnection({
-    host:               config.host     || '127.0.0.1',
-    port:               config.port     || 3306,
-    user:               config.user     || '',
-    password:           config.password || '',
-    database:           config.database || 'aquameter',
-    ssl:                config.ssl ? {} : undefined,
-    multipleStatements: true,
-    charset:            'utf8mb4',
-    dateStrings:        true,
+  const pool = mysql.createPool({
+    host:                  config.host     || '127.0.0.1',
+    port:                  config.port     || 3306,
+    user:                  config.user     || '',
+    password:              config.password || '',
+    database:              config.database || 'aquameter',
+    ssl:                   config.ssl ? {} : undefined,
+    multipleStatements:    true,
+    charset:               'utf8mb4',
+    dateStrings:           true,
+    connectionLimit:       10,
+    waitForConnections:    true,
+    queueLimit:            0,
+    enableKeepAlive:       true,
+    keepAliveInitialDelay: 10000,
   })
-  await conn.query("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci")
+
+  // Set charset untuk setiap koneksi baru yang dibuat oleh pool
+  pool.on('connection', (rawConn) => {
+    rawConn.query("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci", (err) => {
+      if (err) console.error('MySQL set names error:', err.message)
+    })
+  })
+
+  // Verifikasi koneksi saat startup
+  const testConn = await pool.getConnection()
+  testConn.release()
 
   function buildResult(r) {
     return { lastInsertRowid: r.insertId || null, changes: r.affectedRows }
   }
 
-  // query() (text protocol) lebih kompatibel dengan MariaDB daripada execute()
   async function get(sql, params = []) {
-    const [rows] = await conn.query(escapeMysql56(sql), params)
+    const [rows] = await pool.query(escapeMysql56(sql), params)
     return rows[0] || null
   }
   async function all(sql, params = []) {
-    const [rows] = await conn.query(escapeMysql56(sql), params)
+    const [rows] = await pool.query(escapeMysql56(sql), params)
     return rows
   }
   async function run(sql, params = []) {
-    const [r] = await conn.query(escapeMysql56(sql), params)
+    const [r] = await pool.query(escapeMysql56(sql), params)
     return buildResult(r)
   }
   async function exec(sql) {
-    await conn.query(sql)
+    await pool.query(sql)
   }
   async function transaction(fn) {
+    const conn = await pool.getConnection()
     await conn.beginTransaction()
     try {
       const tx = {
@@ -104,6 +118,8 @@ async function createMysqlDbAdapter(config) {
     } catch (e) {
       await conn.rollback()
       throw e
+    } finally {
+      conn.release()
     }
   }
 
