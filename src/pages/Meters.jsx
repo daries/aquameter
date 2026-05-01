@@ -413,9 +413,9 @@ export default function Meters() {
   const [editingReading, setEditingReading] = useState(null)
   const [photoPreview,   setPhotoPreview]   = useState(null)
 
-  const thisMonth       = date.substring(0, 7)
+  const thisMonth       = new Date().toLocaleDateString('sv-SE').substring(0, 7)
   const readIds         = new Set(apiReadings.filter(r => r.period === thisMonth).map(r => r.custId))
-  const historyReadings = apiReadings.slice(0, 15)
+  const historyReadings = apiReadings.filter(r => r.period === thisMonth)
 
   const usage   = customer ? Math.max(0, parseFloat(currentStand || 0) - customer.lastStand) : 0
   const preview = calcPreview(liveTariffs, customer?.group, usage, liveSettings)
@@ -661,7 +661,7 @@ export default function Meters() {
             <div className="card-header">
               <div className="card-title">Riwayat Pembacaan</div>
               <span style={{ fontSize: 12, color: 'var(--text-hint)' }}>
-                {loadingReadings ? 'Memuat...' : `${apiReadings.length} total`}
+                {loadingReadings ? 'Memuat...' : `${historyReadings.length} data · ${new Date().toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })}`}
               </span>
             </div>
             <div className="table-wrap">
