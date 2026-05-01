@@ -3,6 +3,7 @@ const {
   useMultiFileAuthState,
   DisconnectReason,
   fetchLatestBaileysVersion,
+  jidNormalizedUser,
 } = require('@whiskeysockets/baileys')
 const pino   = require('pino')
 const qrcode = require('qrcode')
@@ -27,7 +28,7 @@ function nextId() {
 }
 
 function enqueue(recipient, text, description = '') {
-  const jid   = recipient.includes('@') ? recipient : formatJid(recipient)
+  const jid   = recipient.includes('@') ? jidNormalizedUser(recipient) : formatJid(recipient)
   const phone = jid.split('@')[0]
   const item  = {
     id: nextId(),
@@ -166,8 +167,9 @@ async function connect() {
         if (msg.key.remoteJid?.endsWith('@g.us'))  continue
         if (!msg.message)                          continue
 
-        const jid   = msg.key.remoteJid
-        const phone = jid.split('@')[0].split(':')[0]
+        const rawJid = msg.key.remoteJid
+        const jid    = jidNormalizedUser(rawJid)
+        const phone  = jid.split('@')[0]
         const text  =
           msg.message.conversation ||
           msg.message.extendedTextMessage?.text ||

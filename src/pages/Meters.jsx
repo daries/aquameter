@@ -261,7 +261,7 @@ function CameraCapture({ onCapture }) {
             )}
             <label className={`btn btn-ghost${compressing ? ' disabled' : ''}`} style={{ cursor: compressing ? 'not-allowed' : 'pointer' }}>
               📁 Upload dari Galeri
-              <input type="file" accept="image/*" capture="environment" onChange={handleFileUpload} style={{ display: 'none' }} disabled={compressing} />
+              <input type="file" accept="image/*" onChange={handleFileUpload} style={{ display: 'none' }} disabled={compressing} />
             </label>
           </>
         ) : (
