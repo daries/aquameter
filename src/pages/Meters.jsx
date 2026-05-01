@@ -156,14 +156,22 @@ function sizeKb(dataUrl) {
 
 // ─── Camera capture ───
 function CameraCapture({ onCapture }) {
-  const videoRef  = useRef(null)
-  const canvasRef = useRef(null)
+  const videoRef     = useRef(null)
+  const canvasRef    = useRef(null)
+  const fileInputRef = useRef(null)
+  const streamRef    = useRef(null)   // ref agar stopCamera tidak perlu stream di closure
   const [stream,      setStream]      = useState(null)
   const [photo,       setPhoto]       = useState(null)
-  const [photoInfo,   setPhotoInfo]   = useState(null)   // { kb, origKb }
+  const [photoInfo,   setPhotoInfo]   = useState(null)
   const [camError,    setCamError]    = useState(null)
   const [camReady,    setCamReady]    = useState(false)
   const [compressing, setCompressing] = useState(false)
+
+  const stopCamera = useCallback(() => {
+    const s = streamRef.current
+    if (s) { s.getTracks().forEach(t => t.stop()); streamRef.current = null }
+    setStream(null); setCamReady(false)
+  }, [])
 
   const startCamera = useCallback(async () => {
     setCamError(null); setCamReady(false)
@@ -171,6 +179,7 @@ function CameraCapture({ onCapture }) {
       const s = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }
       })
+      streamRef.current = s
       setStream(s)
       if (videoRef.current) {
         videoRef.current.srcObject = s
@@ -181,17 +190,11 @@ function CameraCapture({ onCapture }) {
     }
   }, [])
 
-  const stopCamera = useCallback(() => {
-    if (stream) { stream.getTracks().forEach(t => t.stop()); setStream(null) }
-    setCamReady(false)
-  }, [stream])
-
   useEffect(() => { startCamera() }, [])
-  useEffect(() => () => { if (stream) stream.getTracks().forEach(t => t.stop()) }, [stream])
+  useEffect(() => () => stopCamera(), [])
 
   const capturePhoto = async () => {
     const video = videoRef.current, canvas = canvasRef.current
-    // Gambar ke canvas asli dulu untuk ukuran asli
     canvas.width  = video.videoWidth  || 1280
     canvas.height = video.videoHeight || 720
     canvas.getContext('2d').drawImage(video, 0, 0)
@@ -207,10 +210,21 @@ function CameraCapture({ onCapture }) {
 
   const retake = () => { setPhoto(null); setPhotoInfo(null); onCapture(null); startCamera() }
 
+  // iOS Safari: stream kamera aktif mencegah galeri terbuka.
+  // Hentikan stream dulu, tunggu sebentar, baru buka file picker.
+  const openGallery = () => {
+    if (compressing) return
+    stopCamera()
+    setTimeout(() => { fileInputRef.current?.click() }, 150)
+  }
+
   const handleFileUpload = async (e) => {
-    const file = e.target.files[0]; if (!file) return
+    const file = e.target.files[0]
+    // Reset value agar onChange terpicu lagi jika pilih file sama
+    e.target.value = ''
+    if (!file) return
     const origKb = Math.round(file.size / 1024)
-    setCompressing(true); stopCamera()
+    setCompressing(true)
 
     const reader = new FileReader()
     reader.onload = async (ev) => {
@@ -225,6 +239,13 @@ function CameraCapture({ onCapture }) {
   return (
     <div className="camera-wrap">
       <canvas ref={canvasRef} style={{ display: 'none' }} />
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        onChange={handleFileUpload}
+        style={{ display: 'none' }}
+      />
 
       {photo ? (
         <div className="camera-preview-wrap">
@@ -259,10 +280,14 @@ function CameraCapture({ onCapture }) {
                 {compressing ? 'Memproses...' : 'Ambil Foto'}
               </Button>
             )}
-            <label className={`btn btn-ghost${compressing ? ' disabled' : ''}`} style={{ cursor: compressing ? 'not-allowed' : 'pointer' }}>
+            <button
+              className={`btn btn-ghost${compressing ? ' disabled' : ''}`}
+              style={{ cursor: compressing ? 'not-allowed' : 'pointer' }}
+              onClick={openGallery}
+              disabled={compressing}
+            >
               📁 Upload dari Galeri
-              <input type="file" accept="image/*" onChange={handleFileUpload} style={{ display: 'none' }} disabled={compressing} />
-            </label>
+            </button>
           </>
         ) : (
           <Button variant="ghost" onClick={retake} icon="🔄">Ambil Ulang</Button>
