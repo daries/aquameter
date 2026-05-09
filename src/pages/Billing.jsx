@@ -12,17 +12,19 @@ export default function Billing() {
   const [loading, setLoading]       = useState(true)
   const [tab, setTab]               = useState('unpaid')
   const [search, setSearch]         = useState('')
+  const [filterMonth, setFilterMonth] = useState(new Date().toLocaleDateString('sv-SE').substring(0, 7))
   const [selectedBill, setSelectedBill] = useState(null)
   const [photoPreview, setPhotoPreview] = useState(null)
   const [page, setPage]               = useState(1)
   const PAGE_SIZE = 20
   const loadedRef = useRef(false)
 
-  const loadBills = async () => {
+  const loadBills = async (month) => {
+    setLoading(true)
     try {
-      const [data, sett] = await Promise.all([billAPI.getAll({ limit: 500 }), settingsAPI.get()])
+      const params = month ? { periodKey: month, limit: 300 } : { limit: 500 }
+      const data = await billAPI.getAll(params)
       setBills(data)
-      setSettings(sett)
     } catch (e) {
       showToast(e.message, 'error')
     } finally {
@@ -33,7 +35,9 @@ export default function Billing() {
   useEffect(() => {
     if (loadedRef.current) return
     loadedRef.current = true
-    loadBills()
+    const currentMonth = new Date().toLocaleDateString('sv-SE').substring(0, 7)
+    settingsAPI.get().then(setSettings).catch(() => {})
+    loadBills(currentMonth)
   }, [])
 
   const handleMarkPaid = async (b) => {
@@ -70,14 +74,15 @@ export default function Billing() {
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE)
   const paginated  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
-  const handleTabChange = (t) => { setTab(t); setPage(1) }
-  const handleSearch    = (v) => { setSearch(v); setPage(1) }
+  const handleTabChange   = (t) => { setTab(t); setPage(1) }
+  const handleSearch      = (v) => { setSearch(v); setPage(1) }
+  const handleMonthChange = (v) => { setFilterMonth(v); setPage(1); loadBills(v) }
 
   const tabs = [
-    { id: 'all',    label: 'Semua',       count: bills.length },
-    { id: 'unpaid', label: 'Belum Lunas', count: bills.filter(b => b.status === 'unpaid').length },
-    { id: 'overdue',label: 'Terlambat',   count: bills.filter(b => b.status === 'overdue').length },
-    { id: 'paid',   label: 'Lunas',       count: bills.filter(b => b.status === 'paid').length },
+    { id: 'all',     label: 'Semua',       count: bills.length },
+    { id: 'unpaid',  label: 'Belum Lunas', count: bills.filter(b => b.status === 'unpaid').length },
+    { id: 'overdue', label: 'Terlambat',   count: bills.filter(b => b.status === 'overdue').length },
+    { id: 'paid',    label: 'Lunas',       count: bills.filter(b => b.status === 'paid').length },
   ]
 
   const totalAmount = filtered.reduce((s, b) => s + b.total, 0)
@@ -102,9 +107,28 @@ export default function Billing() {
       </div>
 
       {/* Toolbar */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, gap: 12 }}>
-        <div style={{ flex: 1 }}>
+      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12, gap: 10, flexWrap: 'wrap' }}>
+        <div style={{ flex: 1, minWidth: 160 }}>
           <SearchInput value={search} onChange={handleSearch} placeholder="Cari nama, no. tagihan..." />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <input
+            type="month"
+            className="form-input"
+            style={{ width: 'auto', fontSize: 13, padding: '6px 10px', height: 38 }}
+            value={filterMonth}
+            onChange={e => handleMonthChange(e.target.value)}
+          />
+          {filterMonth && (
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => handleMonthChange('')}
+              title="Tampilkan semua bulan"
+              style={{ whiteSpace: 'nowrap', fontSize: 12 }}
+            >
+              Semua
+            </button>
+          )}
         </div>
         <span style={{ fontSize: 12, color: 'var(--text-hint)', whiteSpace: 'nowrap' }}>{filtered.length} tagihan</span>
       </div>

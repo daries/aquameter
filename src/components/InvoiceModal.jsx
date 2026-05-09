@@ -6,11 +6,11 @@ import { printReceiptThermal } from '../utils/receiptPrinter'
 import { useStore } from '../store'
 
 export function InvoiceModal({ open, onClose, bill, onMarkPaid, onMarkUnpaid, settingsData }) {
-  const { customers, settings: storeSettings, markPaid, markUnpaid, showToast } = useStore()
+  const { settings: storeSettings, markPaid, markUnpaid, showToast } = useStore()
   if (!bill) return null
 
-  // Support both store-based and API-based customer data
-  const customer = customers.find(c => c.id === bill.custId) || {
+  // Selalu pakai data dari bill (dari API) — jangan lookup dari store agar tidak tampil data demo lama
+  const customer = {
     name:    bill.custName,
     address: bill.custAddress || '',
     meter:   bill.meter,
