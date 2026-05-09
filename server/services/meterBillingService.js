@@ -141,16 +141,18 @@ async function updateReadingAndBill(db, payload) {
 
 async function listBills(db, filters = {}) {
   const { status, periodKey, custId, limit = 100 } = filters
+  // Subquery foto agar tidak ada duplikasi baris jika ada >1 reading per pelanggan per periode
   let sql = `SELECT b.*, c.name as cust_name, c.meter, c.grp,
-           r.photo as reading_photo
+           (SELECT r.photo FROM readings r
+            WHERE r.cust_id = b.cust_id AND r.period = b.period_key
+            LIMIT 1) as reading_photo
            FROM bills b
            JOIN customers c ON c.id = b.cust_id
-           LEFT JOIN readings r ON r.cust_id = b.cust_id AND r.period = b.period_key
            WHERE 1=1`
   const params = []
-  if (status) { sql += ' AND b.status = ?'; params.push(status) }
+  if (status)    { sql += ' AND b.status = ?';     params.push(status) }
   if (periodKey) { sql += ' AND b.period_key = ?'; params.push(periodKey) }
-  if (custId) { sql += ' AND b.cust_id = ?'; params.push(custId) }
+  if (custId)    { sql += ' AND b.cust_id = ?';    params.push(custId) }
   sql += ' ORDER BY b.id DESC LIMIT ?'
   params.push(parseInt(limit))
   const rows = await db.all(sql, params)

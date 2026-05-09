@@ -94,6 +94,14 @@ function initializeSqliteDatabase(db, { hashPwd }) {
 
   try { db.exec('ALTER TABLE readings ADD COLUMN photo TEXT') } catch (e) {}
   try { db.exec('ALTER TABLE customers ADD COLUMN wa_jid TEXT') } catch (e) {}
+
+  // Indexes — aman dijalankan ulang (IF NOT EXISTS)
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_bills_period_key   ON bills(period_key);
+    CREATE INDEX IF NOT EXISTS idx_bills_cust_id      ON bills(cust_id);
+    CREATE INDEX IF NOT EXISTS idx_bills_status       ON bills(status);
+    CREATE INDEX IF NOT EXISTS idx_readings_cust_per  ON readings(cust_id, period);
+  `)
   try {
     db.exec(`
       CREATE TABLE IF NOT EXISTS installations (
@@ -380,6 +388,17 @@ async function initializeDatabaseAsync(adapter, { hashPwd }) {
   // 1. Create all tables (engine-specific schema)
   await ensureSchema(adapter)
   console.log(`✅ Schema siap [${adapter.engine}]`)
+
+  // 2. Indexes — dibungkus try-catch agar aman pada engine yang tidak support IF NOT EXISTS
+  const indexes = [
+    'CREATE INDEX IF NOT EXISTS idx_bills_period_key  ON bills(period_key)',
+    'CREATE INDEX IF NOT EXISTS idx_bills_cust_id     ON bills(cust_id)',
+    'CREATE INDEX IF NOT EXISTS idx_bills_status      ON bills(status)',
+    'CREATE INDEX IF NOT EXISTS idx_readings_cust_per ON readings(cust_id, period)',
+  ]
+  for (const idx of indexes) {
+    try { await adapter.exec(idx) } catch (e) { /* sudah ada atau engine tidak support IF NOT EXISTS */ }
+  }
 
   // 2. Seed settings (insert if not exists)
   for (const [key, value] of DEFAULT_SETTINGS_LIST) {
