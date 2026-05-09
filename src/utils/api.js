@@ -82,8 +82,9 @@ export const databaseAPI = {
 
 // ─── Reports ───
 export const reportAPI = {
-  monthly: (year) => api.get('/reports/monthly', { params: { year } }),
-  summary: ()     => api.get('/reports/summary'),
+  monthly:   (year) => api.get('/reports/monthly',   { params: { year } }),
+  summary:   ()     => api.get('/reports/summary'),
+  customers: (year) => api.get('/reports/customers', { params: { year } }),
 }
 
 // ─── Users ───

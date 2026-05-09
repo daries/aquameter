@@ -29,7 +29,24 @@ async function getSummaryReport(db, today) {
   `, [today])
 }
 
+async function getCustomerReport(db, year) {
+  return await db.all(`
+    SELECT
+      c.id, c.name as cust_name, c.meter, c.grp,
+      COUNT(b.id)                                                      as bill_count,
+      SUM(b.usage)                                                     as total_volume,
+      SUM(b.total)                                                     as total_billed,
+      SUM(CASE WHEN b.status='paid' THEN b.total ELSE 0 END)          as total_paid
+    FROM customers c
+    JOIN bills b ON b.cust_id = c.id
+    WHERE b.period_key LIKE ?
+    GROUP BY c.id, c.name, c.meter, c.grp
+    ORDER BY total_billed DESC
+  `, [`${year}-%`])
+}
+
 module.exports = {
   getMonthlyReport,
   getSummaryReport,
+  getCustomerReport,
 }

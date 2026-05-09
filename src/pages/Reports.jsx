@@ -40,12 +40,14 @@ export default function Reports() {
   const [year, setYear] = useState(new Date().getFullYear())
 
   // Data from API
-  const [summary,   setSummary]   = useState(null)
-  const [monthly,   setMonthly]   = useState([])
-  const [bills,     setBills]     = useState([])
-  const [customers, setCustomers] = useState([])
-  const [settings,  setSettings]  = useState({})
-  const [loading,   setLoading]   = useState(true)
+  const [summary,     setSummary]     = useState(null)
+  const [monthly,     setMonthly]     = useState([])
+  const [custStats,   setCustStats]   = useState([])
+  const [customers,   setCustomers]   = useState([])
+  const [settings,    setSettings]    = useState({})
+  const [loading,     setLoading]     = useState(true)
+  const [periodBills, setPeriodBills] = useState([])
+  const [loadingPeriod, setLoadingPeriod] = useState(false)
 
   // Monthly tab state
   const [selectedPeriod, setSelectedPeriod] = useState('')
@@ -58,22 +60,42 @@ export default function Reports() {
     loadAll(year)
   }, [])
 
+  // Fetch bills untuk periode yang dipilih secara lazy
+  useEffect(() => {
+    if (!selectedPeriod) return
+    setLoadingPeriod(true)
+    billAPI.getAll({ periodKey: selectedPeriod, limit: 300 })
+      .then(setPeriodBills)
+      .catch(() => {})
+      .finally(() => setLoadingPeriod(false))
+  }, [selectedPeriod])
+
   const loadAll = async (y) => {
     setLoading(true)
     try {
-      const [sum, mon, bl, cust, sett] = await Promise.all([
+      const [sum, mon, cs, cust, sett] = await Promise.all([
         reportAPI.summary(),
         reportAPI.monthly(y),
-        billAPI.getAll({ limit: 2000 }),
+        reportAPI.customers(y),
         customerAPI.getAll({ status: 'active' }),
         settingsAPI.get(),
       ])
       setSummary(sum)
       setMonthly(mon)
-      setBills(bl)
+      setCustStats(cs.map(r => ({
+        id:        r.id,
+        name:      r.cust_name,
+        meter:     r.meter,
+        group:     r.grp,
+        billCount: Number(r.bill_count),
+        totalV:    Number(r.total_volume  || 0),
+        totalT:    Number(r.total_billed  || 0),
+        totalP:    Number(r.total_paid    || 0),
+        pct: Number(r.total_billed) > 0
+          ? Math.round(Number(r.total_paid) / Number(r.total_billed) * 100) : 0,
+      })))
       setCustomers(cust)
       setSettings(sett)
-      // Default ke periode terakhir yang ada
       if (mon.length > 0 && !selectedPeriod) {
         setSelectedPeriod(mon[mon.length - 1].period_key)
       }
@@ -87,6 +109,7 @@ export default function Reports() {
   const handleYearChange = (y) => {
     setYear(y)
     setSelectedPeriod('')
+    setPeriodBills([])
     loadedRef.current = false
     loadAll(y)
   }
@@ -108,24 +131,9 @@ export default function Reports() {
     ? monthly.reduce((s, m) => s + (m.pay_rate || 0), 0) / monthly.length
     : 0
 
-  // Bills for selected period (monthly tab)
-  const periodBills = bills.filter(b => b.periodKey === selectedPeriod)
-
-  // Per-customer aggregation
-  const custStats = customers.map(c => {
-    const cb    = bills.filter(b => b.custId === c.id)
-    const paid  = cb.filter(b => b.status === 'paid')
-    const totalV = cb.reduce((s, b) => s + b.usage, 0)
-    const totalT = cb.reduce((s, b) => s + b.total, 0)
-    const totalP = paid.reduce((s, b) => s + b.total, 0)
-    const pct    = totalT > 0 ? Math.round(totalP / totalT * 100) : 0
-    return { ...c, billCount: cb.length, totalV, totalT, totalP, pct }
-  }).filter(c => c.billCount > 0)
-    .sort((a, b) => b.totalT - a.totalT)
-
   const handleExportPDF = () => {
     const period = selectedPeriod || (monthly.length ? monthly[monthly.length - 1].period_key : '')
-    const pb = bills.filter(b => b.periodKey === period)
+    const pb = periodBills
     generateMonthlyReportPDF({
       totalVolume:  pb.reduce((s, b) => s + b.usage, 0),
       totalBilled:  pb.reduce((s, b) => s + b.total, 0),
@@ -328,7 +336,9 @@ export default function Reports() {
                     </tr>
                   </thead>
                   <tbody>
-                    {periodBills.length === 0 ? (
+                    {loadingPeriod ? (
+                      <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--text-hint)', padding: 24 }}>Memuat...</td></tr>
+                    ) : periodBills.length === 0 ? (
                       <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--text-hint)', padding: 24 }}>Tidak ada tagihan</td></tr>
                     ) : periodBills.map(b => {
                       const status = getBillStatus(b)

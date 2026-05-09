@@ -81,7 +81,7 @@ const {
 } = require('./services/meterBillingService')
 const { getUserByUsername, createSession, deleteSession, getSessionUser } = require('./services/authService')
 const { listTariffs, replaceTariffBlocks } = require('./services/tariffService')
-const { getMonthlyReport, getSummaryReport } = require('./services/reportService')
+const { getMonthlyReport, getSummaryReport, getCustomerReport } = require('./services/reportService')
 const { initializeSqliteDatabase, initializeDatabaseAsync } = require('./bootstrap')
 
 const app = express()
@@ -528,6 +528,15 @@ router.get('/reports/monthly', async (req, res) => {
 router.get('/reports/summary', async (_req, res) => {
   try {
     res.json(await getSummaryReport(appDb, getToday(getTimezone())))
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+router.get('/reports/customers', async (req, res) => {
+  const { year = new Date().getFullYear() } = req.query
+  try {
+    res.json(await getCustomerReport(appDb, year))
   } catch (error) {
     res.status(500).json({ error: error.message })
   }
