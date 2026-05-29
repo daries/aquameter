@@ -106,7 +106,22 @@ let _settingsCache = {}
 let _tariffCache = null
 let _runtimeInfo = { engine: 'sqlite', sqlitePath: null, note: 'Server sedang inisialisasi...' }
 
+// ─── Webhook log (in-memory, maks 50 entri) ───
+const _webhookLog = []
+function addWebhookLog(entry) {
+  _webhookLog.unshift({ id: Date.now().toString(36), time: new Date().toISOString(), ...entry })
+  if (_webhookLog.length > 50) _webhookLog.pop()
+}
+
 // ─── Helper functions ───
+function fmtDate(d) {
+  if (!d) return '—'
+  const dateOnly = String(d).split('T')[0].split(' ')[0]
+  const parsed   = new Date(dateOnly + 'T00:00:00')
+  if (isNaN(parsed.getTime())) return dateOnly
+  return parsed.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
+}
+
 function hashPwd(pwd) {
   return crypto.createHash('sha256').update(pwd + ':aquameter2025').digest('hex')
 }
@@ -271,12 +286,12 @@ router.patch('/readings/:id', async (req, res) => {
         .replace('{nama}',          cust.name)
         .replace('{nomor_meter}',   cust.meter)
         .replace('{bulan}',         bulan)
-        .replace('{tanggal_baca}',  readDate)
+        .replace('{tanggal_baca}',  fmtDate(readDate))
         .replace('{meter_awal}',    reading.last_stand)
         .replace('{meter_akhir}',   newStand)
         .replace('{pemakaian}',     usage)
         .replace('{tagihan}',       billData ? Number(billData.total).toLocaleString('id-ID') : '—')
-        .replace('{jatuh_tempo}',   billData ? billData.due_date : '—')
+        .replace('{jatuh_tempo}',   fmtDate(billData?.due_date))
         .replace('{nama_perusahaan}', sett.companyName || 'PAMSIMAS')
       const msg = `📝 *REVISI BACA METER*\n\n${msgBody}`
       wa.enqueue(cust.phone, msg, `Revisi baca meter – ${cust.name}`)
@@ -335,12 +350,12 @@ router.post('/readings', async (req, res) => {
         .replace('{nama}',          cust.name)
         .replace('{nomor_meter}',   cust.meter)
         .replace('{bulan}',         bulan)
-        .replace('{tanggal_baca}',  date)
+        .replace('{tanggal_baca}',  fmtDate(date))
         .replace('{meter_awal}',    cust.last_stand)
         .replace('{meter_akhir}',   currentStand)
         .replace('{pemakaian}',     usage)
         .replace('{tagihan}',       bill ? Number(bill.total).toLocaleString('id-ID') : '—')
-        .replace('{jatuh_tempo}',   bill ? bill.due_date : '—')
+        .replace('{jatuh_tempo}',   fmtDate(bill?.due_date))
         .replace('{nama_perusahaan}', sett.companyName || 'PAMSIMAS')
       wa.enqueue(cust.phone, msg, `Notif baca meter – ${cust.name}`)
     }
@@ -1087,37 +1102,81 @@ app.post('/api/whatsapp/disconnect', requireAuth, requireAdmin, async (_req, res
 })
 
 // ─── Fonnte Webhook (public — dipanggil server Fonnte, tidak perlu auth) ───
+function processFonntePayload(body) {
+  const raw     = JSON.stringify(body)
+  const sender  = body.sender  || body.from   || ''
+  const message = body.message || body.text   || body.body || ''
+  const member  = body.member  || ''
+
+  console.log('[Fonnte webhook] body:', raw)
+
+  if (!sender || !message) {
+    const reason = 'sender atau message kosong'
+    console.log('[Fonnte webhook] skip:', reason)
+    addWebhookLog({ status: 'skip', reason, raw })
+    return
+  }
+
+  const senderStr = String(sender)
+  const isGroup   = senderStr.includes('-') || senderStr.includes('@g.us')
+    || (member && member !== sender && member !== senderStr.replace(/\D/g, ''))
+  if (isGroup) {
+    const reason = 'pesan grup'
+    console.log('[Fonnte webhook] skip:', reason)
+    addWebhookLog({ status: 'skip', reason, sender: senderStr, message: String(message).substring(0, 80) })
+    return
+  }
+
+  const settings = getSettings()
+  if (settings.waMode !== 'fonnte') {
+    const reason = `waMode bukan fonnte (saat ini: ${settings.waMode || 'tidak diset'})`
+    console.log('[Fonnte webhook] skip:', reason)
+    addWebhookLog({ status: 'skip', reason, sender: senderStr, message: String(message).substring(0, 80) })
+    return
+  }
+  if (settings.waEnabled !== 'true') {
+    const reason = 'notifikasi WA nonaktif (waEnabled bukan true)'
+    console.log('[Fonnte webhook] skip:', reason)
+    addWebhookLog({ status: 'skip', reason, sender: senderStr, message: String(message).substring(0, 80) })
+    return
+  }
+
+  let num = senderStr.replace(/\D/g, '')
+  if (num.startsWith('0'))   num = '62' + num.slice(1)
+  if (!num.startsWith('62')) num = '62' + num
+  const jid = num + '@s.whatsapp.net'
+
+  console.log(`[Fonnte webhook] proses dari ${num}: "${String(message).substring(0, 80)}"`)
+  addWebhookLog({ status: 'ok', sender: num, message: String(message).substring(0, 80) })
+
+  handleMessage(jid, num, String(message), {
+    db: appDb, wa, calcWaterCost, getSettings, calcDueDate,
+  }).catch(e => {
+    console.error('[Fonnte webhook] bot error:', e.message)
+    if (_webhookLog[0]?.sender === num) _webhookLog[0].botError = e.message
+  })
+}
+
 app.post('/webhook/fonnte', (req, res) => {
-  res.json({ ok: true })  // balas cepat agar Fonnte tidak retry
+  res.json({ ok: true })
+  try { processFonntePayload(req.body || {}) } catch (e) {
+    console.error('[Fonnte webhook] error:', e.message)
+    addWebhookLog({ status: 'error', reason: e.message })
+  }
+})
 
+app.get('/api/whatsapp/webhook-log', requireAuth, (_req, res) => {
+  res.json(_webhookLog)
+})
+
+app.post('/api/whatsapp/test-webhook', requireAuth, requireAdmin, (req, res) => {
+  const phone   = req.body?.phone   || '628123456789'
+  const message = req.body?.message || 'bantuan'
   try {
-    const { sender, message, member } = req.body || {}
-
-    if (!sender || !message) return
-
-    // Abaikan pesan grup (sender group JID mengandung '-' atau member terisi)
-    if (String(sender).includes('-') || String(sender).includes('@g.us') || member) return
-
-    const settings = getSettings()
-    if (settings.waMode !== 'fonnte') return
-    if (settings.waEnabled !== 'true') return
-
-    let num = String(sender).replace(/\D/g, '')
-    if (num.startsWith('0'))   num = '62' + num.slice(1)
-    if (!num.startsWith('62')) num = '62' + num
-    const jid = num + '@s.whatsapp.net'
-
-    console.log(`📲 Fonnte webhook dari ${num}: "${message.substring(0, 60)}"`)
-
-    handleMessage(jid, num, message, {
-      db: appDb,
-      wa,
-      calcWaterCost,
-      getSettings,
-      calcDueDate,
-    }).catch(e => console.error('Fonnte webhook bot error:', e.message))
+    processFonntePayload({ sender: phone, message })
+    res.json({ ok: true, phone, message })
   } catch (e) {
-    console.error('Fonnte webhook parse error:', e.message)
+    res.status(500).json({ error: e.message })
   }
 })
 

@@ -103,7 +103,9 @@ export const waAPI = {
   getQueue:    ()  => api.get('/whatsapp/queue'),
   clearDone:   ()  => api.post('/whatsapp/queue/clear'),
   retryFailed: ()  => api.post('/whatsapp/queue/retry'),
-  testFonnte:  (token) => api.post('/whatsapp/test-fonnte', token ? { token } : {}),
+  testFonnte:   (token)         => api.post('/whatsapp/test-fonnte', token ? { token } : {}),
+  webhookLog:   ()              => api.get('/whatsapp/webhook-log'),
+  testWebhook:  (phone, message) => api.post('/whatsapp/test-webhook', { phone, message }),
 }
 
 // ─── Transaction Categories ───

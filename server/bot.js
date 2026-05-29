@@ -26,9 +26,11 @@ function clearSession(jid)            { sessions.delete(jid) }
 
 function formatDate(d) {
   if (!d) return '—'
-  return new Date(d + 'T00:00:00').toLocaleDateString('id-ID', {
-    day: 'numeric', month: 'long', year: 'numeric',
-  })
+  // Ambil hanya bagian tanggal (YYYY-MM-DD) — handle format ISO maupun 'YYYY-MM-DD HH:MM:SS'
+  const dateOnly = String(d).split('T')[0].split(' ')[0]
+  const parsed   = new Date(dateOnly + 'T00:00:00')
+  if (isNaN(parsed.getTime())) return dateOnly
+  return parsed.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
 }
 
 // Cari pelanggan by wa_jid (prioritas) — tidak lagi by phone karena WA pakai LID

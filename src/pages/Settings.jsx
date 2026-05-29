@@ -51,22 +51,31 @@ export default function Settings() {
   const [waConnecting,  setWaConnecting]  = useState(false)
   const [waQueue,       setWaQueue]       = useState([])
   const [showQueue,     setShowQueue]     = useState(false)
-  const [showToken,     setShowToken]     = useState(false)
-  const [fonnteLoading, setFonnteLoading] = useState(false)
-  const waPollerRef    = useRef(null)
-  const queuePollerRef = useRef(null)
+  const [showToken,      setShowToken]      = useState(false)
+  const [fonnteLoading,  setFonnteLoading]  = useState(false)
+  const [webhookLog,     setWebhookLog]     = useState([])
+  const [webhookPhone,   setWebhookPhone]   = useState('')
+  const [webhookMsg,     setWebhookMsg]     = useState('bantuan')
+  const [testWHLoading,  setTestWHLoading]  = useState(false)
+  const waPollerRef      = useRef(null)
+  const queuePollerRef   = useRef(null)
+  const whLogPollerRef   = useRef(null)
 
-  const pollWA    = () => waAPI.status().then(setWaStatus).catch(() => {})
-  const pollQueue = () => waAPI.getQueue().then(setWaQueue).catch(() => {})
+  const pollWA       = () => waAPI.status().then(setWaStatus).catch(() => {})
+  const pollQueue    = () => waAPI.getQueue().then(setWaQueue).catch(() => {})
+  const pollWHLog    = () => waAPI.webhookLog().then(setWebhookLog).catch(() => {})
 
   useEffect(() => {
     pollWA()
     pollQueue()
+    pollWHLog()
     waPollerRef.current    = setInterval(pollWA,    2000)
     queuePollerRef.current = setInterval(pollQueue, 4000)
+    whLogPollerRef.current = setInterval(pollWHLog, 3000)
     return () => {
       clearInterval(waPollerRef.current)
       clearInterval(queuePollerRef.current)
+      clearInterval(whLogPollerRef.current)
     }
   }, [])
 
@@ -481,29 +490,129 @@ export default function Settings() {
             </div>
 
             {isAdmin && (
-              <Button
-                variant="secondary"
-                size="sm"
-                disabled={fonnteLoading || !form.fonnteToken}
-                onClick={async () => {
-                  setFonnteLoading(true)
-                  try {
-                    const result = await waAPI.testFonnte(form.fonnteToken)
-                    if (result.ok) {
-                      showToast(`Fonnte terhubung${result.device ? ': ' + result.device : ''}`)
-                    } else {
-                      showToast(result.message || 'Token tidak valid', 'error')
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={fonnteLoading || !form.fonnteToken}
+                  onClick={async () => {
+                    setFonnteLoading(true)
+                    try {
+                      const result = await waAPI.testFonnte(form.fonnteToken)
+                      if (result.ok) {
+                        showToast(`Fonnte terhubung${result.device ? ': ' + result.device : ''}`)
+                      } else {
+                        showToast(result.message || 'Token tidak valid', 'error')
+                      }
+                    } catch (e) {
+                      showToast(e.message, 'error')
+                    } finally {
+                      setFonnteLoading(false)
                     }
-                  } catch (e) {
-                    showToast(e.message, 'error')
-                  } finally {
-                    setFonnteLoading(false)
-                  }
-                }}
-              >
-                {fonnteLoading ? 'Memeriksa...' : '🔌 Test Token'}
-              </Button>
+                  }}
+                >
+                  {fonnteLoading ? 'Memeriksa...' : '🔌 Test Token'}
+                </Button>
+                <Button variant="ghost" size="sm" onClick={pollWHLog}>🔄 Refresh Log</Button>
+              </div>
             )}
+
+            {/* ── Test Webhook ── */}
+            {isAdmin && (
+              <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+                <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>🧪 Simulasi Webhook Masuk</div>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                  <div>
+                    <label className="form-label" style={{ marginBottom: 3 }}>Nomor HP (sender)</label>
+                    <input
+                      value={webhookPhone}
+                      onChange={e => setWebhookPhone(e.target.value)}
+                      placeholder="628xxxxxxxxxx"
+                      style={{ padding: '7px 10px', borderRadius: 7, border: '1.5px solid var(--border)', fontSize: 12, background: 'var(--surface)', color: 'var(--text)', width: 160 }}
+                    />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 120 }}>
+                    <label className="form-label" style={{ marginBottom: 3 }}>Pesan</label>
+                    <input
+                      value={webhookMsg}
+                      onChange={e => setWebhookMsg(e.target.value)}
+                      placeholder="bantuan"
+                      style={{ padding: '7px 10px', borderRadius: 7, border: '1.5px solid var(--border)', fontSize: 12, background: 'var(--surface)', color: 'var(--text)', width: '100%', boxSizing: 'border-box' }}
+                    />
+                  </div>
+                  <Button
+                    variant="primary" size="sm"
+                    disabled={testWHLoading || !webhookPhone || !webhookMsg}
+                    onClick={async () => {
+                      setTestWHLoading(true)
+                      try {
+                        await waAPI.testWebhook(webhookPhone, webhookMsg)
+                        showToast('Simulasi webhook dikirim — lihat log di bawah')
+                        setTimeout(pollWHLog, 500)
+                      } catch (e) {
+                        showToast(e.message, 'error')
+                      } finally {
+                        setTestWHLoading(false)
+                      }
+                    }}
+                  >
+                    {testWHLoading ? 'Mengirim...' : '▶ Kirim Test'}
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* ── Webhook Log ── */}
+            <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+              <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>📋 Log Webhook ({webhookLog.length})</span>
+                <span style={{ fontSize: 10, color: 'var(--text-hint)', fontWeight: 400 }}>auto-refresh 3 detik</span>
+              </div>
+              {webhookLog.length === 0 ? (
+                <div style={{ fontSize: 12, color: 'var(--text-hint)', padding: '10px 0', textAlign: 'center' }}>
+                  Belum ada aktivitas webhook
+                </div>
+              ) : (
+                <div style={{ maxHeight: 260, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {webhookLog.map(entry => {
+                    const isOk    = entry.status === 'ok'
+                    const isError = entry.status === 'error'
+                    return (
+                      <div key={entry.id} style={{
+                        padding: '7px 10px', borderRadius: 8, fontSize: 11,
+                        background: isOk ? 'var(--success-bg, #f0fdf4)' : isError ? 'var(--danger-bg, #fff0f0)' : 'var(--bg)',
+                        border: `1px solid ${isOk ? 'var(--mint)' : isError ? 'var(--danger)' : 'var(--border)'}`,
+                      }}>
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 2 }}>
+                          <span style={{ fontWeight: 700, color: isOk ? 'var(--mint)' : isError ? 'var(--danger)' : 'var(--warning)' }}>
+                            {isOk ? '✅ OK' : isError ? '❌ ERROR' : '⚠️ SKIP'}
+                          </span>
+                          <span style={{ color: 'var(--text-hint)' }}>
+                            {new Date(entry.time).toLocaleTimeString('id-ID')}
+                          </span>
+                          {entry.sender && <span style={{ fontFamily: 'monospace', color: 'var(--ocean)' }}>{entry.sender}</span>}
+                        </div>
+                        {entry.message && (
+                          <div style={{ color: 'var(--text-sec)', marginBottom: entry.reason || entry.botError ? 2 : 0 }}>
+                            💬 "{entry.message}"
+                          </div>
+                        )}
+                        {(entry.reason || entry.botError) && (
+                          <div style={{ color: isOk ? 'var(--text-hint)' : 'var(--danger)', fontStyle: 'italic' }}>
+                            {entry.reason || entry.botError}
+                          </div>
+                        )}
+                        {entry.raw && !entry.sender && (
+                          <div style={{ color: 'var(--text-hint)', fontFamily: 'monospace', fontSize: 10, marginTop: 2, wordBreak: 'break-all' }}>
+                            {entry.raw.substring(0, 120)}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
