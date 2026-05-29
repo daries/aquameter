@@ -10,6 +10,7 @@ function mapCustomer(row) {
     lastStand: row.last_stand,
     status: row.status,
     joinDate: row.join_date,
+    waJid: row.wa_jid || null,
   }
 }
 
@@ -76,6 +77,13 @@ async function deactivateCustomer(db, id) {
   return { success: true }
 }
 
+async function resetCustomerWaJid(db, id) {
+  const row = await getCustomerRowById(db, id)
+  if (!row) return null
+  await db.run('UPDATE customers SET wa_jid = NULL WHERE id = ?', [id])
+  return await getCustomerById(db, id)
+}
+
 module.exports = {
   listCustomers,
   getCustomerById,
@@ -83,4 +91,5 @@ module.exports = {
   createCustomer,
   updateCustomer,
   deactivateCustomer,
+  resetCustomerWaJid,
 }

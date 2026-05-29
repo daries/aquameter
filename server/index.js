@@ -65,6 +65,7 @@ const {
   createCustomer,
   updateCustomer,
   deactivateCustomer,
+  resetCustomerWaJid,
 } = require('./services/customerService')
 const {
   listReadings,
@@ -237,6 +238,16 @@ router.put('/customers/:id', async (req, res) => {
 router.delete('/customers/:id', async (req, res) => {
   try {
     res.json(await deactivateCustomer(appDb, req.params.id))
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+router.patch('/customers/:id/reset-wa', requireAdmin, async (req, res) => {
+  try {
+    const result = await resetCustomerWaJid(appDb, req.params.id)
+    if (!result) return res.status(404).json({ error: 'Pelanggan tidak ditemukan' })
+    res.json(result)
   } catch (error) {
     res.status(500).json({ error: error.message })
   }

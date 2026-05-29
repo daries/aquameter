@@ -44,6 +44,7 @@ export const customerAPI = {
   create:     (data)     => api.post('/customers', data),
   update:     (id, data) => api.put(`/customers/${id}`, data),
   remove:     (id)       => api.delete(`/customers/${id}`),
+  resetWA:    (id)       => api.patch(`/customers/${id}/reset-wa`),
 }
 
 // ─── Readings ───

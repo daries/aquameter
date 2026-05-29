@@ -18,8 +18,9 @@ export default function Customers() {
   const [editData, setEditData]     = useState(null)
   const [form, setForm]             = useState(empty)
   const [errors, setErrors]         = useState({})
-  const [confirmDelete, setConfirmDelete] = useState(null)
-  const [saving, setSaving]         = useState(false)
+  const [confirmDelete, setConfirmDelete]   = useState(null)
+  const [confirmResetWA, setConfirmResetWA] = useState(null)
+  const [saving, setSaving]                 = useState(false)
   const [autoMeter, setAutoMeter]   = useState(true)
   const loadedRef = useRef(false)
 
@@ -109,6 +110,17 @@ export default function Customers() {
     }
   }
 
+  const handleResetWA = async (c) => {
+    try {
+      await customerAPI.resetWA(c.id)
+      showToast(`Nomor WA ${c.name} berhasil direset — pelanggan perlu registrasi ulang`)
+      setConfirmResetWA(null)
+      await loadCustomers()
+    } catch (e) {
+      showToast(e.message, 'error')
+    }
+  }
+
   const groupCounts = ['R1', 'R2', 'R3', 'K1', 'K2'].map(g => ({
     g, count: customers.filter(c => c.group === g).length
   }))
@@ -159,9 +171,13 @@ export default function Customers() {
                   <tr key={c.id}>
                     <td className="hide-mobile" style={{ color: 'var(--text-hint)', fontSize: 12 }}>{i + 1}</td>
                     <td>
-                      <b style={{ display: 'block' }}>{c.name}</b>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <b>{c.name}</b>
+                        {c.waJid && (
+                          <span title={`WA terdaftar: ${c.waJid}`} style={{ fontSize: 13, lineHeight: 1 }}>📱</span>
+                        )}
+                      </div>
                       <span style={{ fontSize: 11, color: 'var(--text-hint)' }}>Sejak {c.joinDate}</span>
-                      <span className="mono hide-mobile" style={{ fontSize: 11, color: 'var(--text-hint)' }}>{c.lastStand.toLocaleString('id-ID')} m³</span>
                     </td>
                     <td className="mono" style={{ fontSize: 12 }}>{c.meter}</td>
                     <td className="hide-mobile" style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12 }} title={c.address}>{c.address}</td>
@@ -173,6 +189,9 @@ export default function Customers() {
                       <div style={{ display: 'flex', gap: 4 }}>
                         <Button variant="secondary" size="sm" onClick={() => navigate('/meters')} icon="💧">Baca</Button>
                         <Button variant="ghost" size="sm" onClick={() => openEdit(c)}>✏️</Button>
+                        {c.waJid && (
+                          <Button variant="ghost" size="sm" onClick={() => setConfirmResetWA(c)} title="Reset registrasi WhatsApp">📵</Button>
+                        )}
                         <Button variant="danger" size="sm" onClick={() => setConfirmDelete(c)}>🗑️</Button>
                       </div>
                     </td>
@@ -228,6 +247,35 @@ export default function Customers() {
           <FormInput label="No. Telepon" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="08xx-xxxx-xxxx" />
           <FormInput label="Stand Meter Awal (m³)" type="number" value={form.lastStand} onChange={e => setForm({ ...form, lastStand: parseInt(e.target.value) || 0 })} addon="m³" hint={editData ? 'Stand terakhir tercatat' : 'Stand awal pemasangan'} />
         </div>
+
+        {/* Status WA — hanya saat edit */}
+        {editData && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px',
+            background: 'var(--bg)', borderRadius: 8, border: '1px solid var(--border)', marginTop: 4,
+          }}>
+            <span style={{ fontSize: 18 }}>{editData.waJid ? '📱' : '📵'}</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>Status WhatsApp Bot</div>
+              {editData.waJid ? (
+                <div style={{ fontSize: 11, color: 'var(--mint)' }}>
+                  Terdaftar · {editData.waJid.split('@')[0]}
+                </div>
+              ) : (
+                <div style={{ fontSize: 11, color: 'var(--text-hint)' }}>Belum terdaftar</div>
+              )}
+            </div>
+            {editData.waJid && (
+              <Button
+                variant="ghost" size="sm"
+                onClick={() => { setModalOpen(false); setConfirmResetWA(editData) }}
+              >
+                🔄 Reset WA
+              </Button>
+            )}
+          </div>
+        )}
+
         <div className="modal-actions">
           <Button variant="ghost" onClick={() => setModalOpen(false)}>Batal</Button>
           <Button variant="primary" onClick={handleSave} disabled={saving}>{saving ? 'Menyimpan...' : editData ? 'Simpan Perubahan' : 'Tambah Pelanggan'}</Button>
@@ -242,6 +290,17 @@ export default function Customers() {
         title="Nonaktifkan Pelanggan"
         message={`Yakin ingin menonaktifkan pelanggan ${confirmDelete?.name}? Data tagihan tetap tersimpan.`}
         confirmLabel="Ya, nonaktifkan"
+        danger
+      />
+
+      {/* Confirm Reset WA */}
+      <ConfirmDialog
+        open={!!confirmResetWA}
+        onClose={() => setConfirmResetWA(null)}
+        onConfirm={() => handleResetWA(confirmResetWA)}
+        title="Reset Registrasi WhatsApp"
+        message={`Reset nomor WA terdaftar untuk ${confirmResetWA?.name} (${confirmResetWA?.waJid?.split('@')[0]})? Pelanggan harus kirim ulang nomor meter untuk menggunakan bot WA.`}
+        confirmLabel="Ya, reset WA"
         danger
       />
     </div>
