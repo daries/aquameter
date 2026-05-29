@@ -9,6 +9,7 @@ const pino   = require('pino')
 const qrcode = require('qrcode')
 const path   = require('path')
 const fs     = require('fs')
+const axios  = require('axios')
 
 const AUTH_DIR  = path.join(__dirname, '.wa_auth')
 const MAX_QUEUE = 200   // simpan maks 200 item di memori
@@ -18,6 +19,96 @@ let currentQR        = null
 let connectionStatus = 'disconnected'
 let reconnectTimer   = null
 let _messageHandler  = null
+
+// ─── Fonnte mode ───────────────────────────────────────────────────────────────
+let waMode      = 'baileys'   // 'baileys' | 'fonnte'
+let fonnteToken = ''
+let fonntePhone = null
+
+function setMode(mode, token) {
+  const switching = mode !== waMode
+  waMode      = mode || 'baileys'
+  fonnteToken = token || ''
+
+  if (switching && waMode === 'fonnte') {
+    clearReconnect()
+    if (sock) {
+      try { sock.logout() } catch (_) {}
+      sock = null
+    }
+    connectionStatus = 'disconnected'
+    currentQR        = null
+    fonntePhone      = null
+  }
+
+  if (switching && waMode === 'baileys') {
+    fonntePhone      = null
+    connectionStatus = 'disconnected'
+  }
+}
+
+// tokenOverride — untuk test langsung dari form sebelum settings disimpan
+async function validateFonnteToken(tokenOverride) {
+  const token = tokenOverride || fonnteToken
+  if (!token) {
+    connectionStatus = 'disconnected'
+    fonntePhone      = null
+    return { ok: false, message: 'Token Fonnte belum dikonfigurasi' }
+  }
+  try {
+    const resp = await axios.post('https://api.fonnte.com/device', {}, {
+      headers: { Authorization: token },
+      timeout: 10000,
+    })
+    console.log('[Fonnte] device response:', JSON.stringify(resp.data))
+    // Fonnte mengembalikan status: true saat berhasil
+    if (resp.data?.status === true) {
+      const devices = resp.data?.data
+      const device  = Array.isArray(devices) && devices.length > 0
+        ? (devices[0].device || devices[0].name || null)
+        : null
+      // Hanya update state global jika bukan test preview (override)
+      if (!tokenOverride) {
+        connectionStatus = 'connected'
+        fonntePhone      = device
+      }
+      return { ok: true, device }
+    }
+    if (!tokenOverride) {
+      connectionStatus = 'disconnected'
+      fonntePhone      = null
+    }
+    return { ok: false, message: resp.data?.reason || resp.data?.message || 'Token tidak valid atau perangkat tidak aktif' }
+  } catch (e) {
+    console.error('[Fonnte] device error:', e.message, e.response?.data)
+    if (!tokenOverride) {
+      connectionStatus = 'disconnected'
+      fonntePhone      = null
+    }
+    return { ok: false, message: e.response?.data?.reason || e.response?.data?.message || e.message }
+  }
+}
+
+async function sendViaFonnte(phone, text) {
+  if (!fonnteToken) throw new Error('Token Fonnte belum dikonfigurasi')
+
+  let num = String(phone).split(':')[0].replace(/\D/g, '')
+  if (num.startsWith('0'))   num = '62' + num.slice(1)
+  if (!num.startsWith('62')) num = '62' + num
+
+  const resp = await axios.post('https://api.fonnte.com/send', {
+    target: num,
+    message: text,
+    countryCode: '62',
+  }, {
+    headers: { Authorization: fonnteToken },
+    timeout: 30000,
+  })
+
+  if (resp.data?.status === false) {
+    throw new Error(resp.data?.reason || resp.data?.message || 'Gagal kirim via Fonnte')
+  }
+}
 
 // ─── Queue ────────────────────────────────────────────────────────────────────
 const queue       = []   // { id, jid, phone, description, text, status, addedAt, sentAt, error }
@@ -73,12 +164,16 @@ async function processQueue() {
       item.status = 'sending'
 
       try {
-        if (!sock || connectionStatus !== 'connected') {
-          throw new Error('WhatsApp belum terhubung')
+        if (waMode === 'fonnte') {
+          await sendViaFonnte(item.phone, item.text)
+        } else {
+          if (!sock || connectionStatus !== 'connected') {
+            throw new Error('WhatsApp belum terhubung')
+          }
+          // Jeda awal sebelum buka chat (meniru perilaku manusia)
+          await randomDelay(2000, 5000)
+          await sendWithHumanDelay(item.jid, item.text)
         }
-        // Jeda awal sebelum buka chat (meniru perilaku manusia)
-        await randomDelay(2000, 5000)
-        await sendWithHumanDelay(item.jid, item.text)
         item.status = 'sent'
         item.sentAt = new Date().toISOString()
         console.log(`✅ WA terkirim [${item.phone}]: ${item.description}`)
@@ -88,10 +183,10 @@ async function processQueue() {
         console.error(`❌ WA gagal [${item.phone}]: ${e.message}`)
       }
 
-      // Jeda antar pesan: 8–20 detik — lebih lama = lebih aman dari deteksi
       const pending = queue.filter(q => q.status === 'pending')
       if (pending.length > 0) {
-        await randomDelay(8000, 20000)
+        // Fonnte API: jeda lebih pendek; Baileys: 8–20 detik agar tidak terdeteksi
+        await randomDelay(waMode === 'fonnte' ? 1000 : 8000, waMode === 'fonnte' ? 3000 : 20000)
       }
     }
   } finally {
@@ -130,6 +225,16 @@ function clearReconnect() {
 }
 
 async function connect() {
+  if (waMode === 'fonnte') {
+    connectionStatus = 'connecting'
+    const result = await validateFonnteToken()
+    if (!result.ok) {
+      connectionStatus = 'disconnected'
+      throw new Error(result.message || 'Token Fonnte tidak valid')
+    }
+    return
+  }
+
   clearReconnect()
   if (!fs.existsSync(AUTH_DIR)) fs.mkdirSync(AUTH_DIR, { recursive: true })
 
@@ -237,8 +342,9 @@ async function connect() {
 function getStatus() {
   return {
     status:     connectionStatus,
-    qr:         currentQR,
-    phone:      sock?.user?.id?.split(':')[0] || null,
+    qr:         waMode === 'fonnte' ? null : currentQR,
+    phone:      waMode === 'fonnte' ? fonntePhone : (sock?.user?.id?.split(':')[0] || null),
+    waMode,
     queueStats: {
       pending:  queue.filter(q => q.status === 'pending').length,
       sending:  queue.filter(q => q.status === 'sending').length,
@@ -276,6 +382,12 @@ function formatJid(phone) {
 }
 
 async function disconnect() {
+  if (waMode === 'fonnte') {
+    connectionStatus = 'disconnected'
+    fonntePhone      = null
+    return
+  }
+
   clearReconnect()
   if (sock) {
     try { await sock.logout() } catch (_) {}
@@ -291,6 +403,8 @@ module.exports = {
   getStatus,
   enqueue,
   getQueue, clearDone, retryFailed,
+  setMode,
+  testFonnte: validateFonnteToken,
   // backward-compat alias agar bot.js tetap jalan
   sendMessage: (recipient, text) => enqueue(recipient, text, 'Bot reply'),
 }

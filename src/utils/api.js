@@ -103,6 +103,7 @@ export const waAPI = {
   getQueue:    ()  => api.get('/whatsapp/queue'),
   clearDone:   ()  => api.post('/whatsapp/queue/clear'),
   retryFailed: ()  => api.post('/whatsapp/queue/retry'),
+  testFonnte:  (token) => api.post('/whatsapp/test-fonnte', token ? { token } : {}),
 }
 
 // ─── Transaction Categories ───

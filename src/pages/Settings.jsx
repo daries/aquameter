@@ -47,11 +47,13 @@ export default function Settings() {
   const loadedRef = useRef(false)
 
   // WhatsApp state
-  const [waStatus,     setWaStatus]     = useState({ status: 'disconnected', qr: null, phone: null, queueStats: null })
-  const [waConnecting, setWaConnecting] = useState(false)
-  const [waQueue,      setWaQueue]      = useState([])
-  const [showQueue,    setShowQueue]    = useState(false)
-  const waPollerRef = useRef(null)
+  const [waStatus,      setWaStatus]      = useState({ status: 'disconnected', qr: null, phone: null, waMode: 'baileys', queueStats: null })
+  const [waConnecting,  setWaConnecting]  = useState(false)
+  const [waQueue,       setWaQueue]       = useState([])
+  const [showQueue,     setShowQueue]     = useState(false)
+  const [showToken,     setShowToken]     = useState(false)
+  const [fonnteLoading, setFonnteLoading] = useState(false)
+  const waPollerRef    = useRef(null)
   const queuePollerRef = useRef(null)
 
   const pollWA    = () => waAPI.status().then(setWaStatus).catch(() => {})
@@ -87,6 +89,8 @@ export default function Settings() {
           ppjEnabled:         data.ppjEnabled         ?? 'true',
           ppjRate:            data.ppjRate            || '10',
           waEnabled:          data.waEnabled          ?? 'false',
+          waMode:             data.waMode             || 'baileys',
+          fonnteToken:        data.fonnteToken        || '',
           waTemplateReading:       data.waTemplateReading       || '',
           waTemplatePayment:       data.waTemplatePayment       || '',
           waTemplateInstallPending: data.waTemplateInstallPending || '',
@@ -380,6 +384,129 @@ export default function Settings() {
       <Card style={{ marginTop: 0 }}>
         <div className="card-title" style={{ marginBottom: 16 }}>📲 Notifikasi WhatsApp</div>
 
+        {/* Provider selector */}
+        {isAdmin && (
+          <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+            {[
+              { val: 'baileys', icon: '📱', label: 'Baileys (QR Scan)', desc: 'Scan QR dari HP langsung — tanpa biaya' },
+              { val: 'fonnte',  icon: '🌐', label: 'Fonnte API',        desc: 'API token dari fonnte.com' },
+            ].map(opt => (
+              <button
+                key={opt.val}
+                onClick={() => setForm(f => ({ ...f, waMode: opt.val }))}
+                style={{
+                  padding: '12px 16px', flex: 1, borderRadius: 10, textAlign: 'left',
+                  border: '2px solid',
+                  borderColor: form.waMode === opt.val ? 'var(--ocean)' : 'var(--border)',
+                  background: form.waMode === opt.val ? 'var(--ocean-pale)' : 'var(--surface-2)',
+                  cursor: 'pointer',
+                }}
+              >
+                <div style={{ fontWeight: 700, fontSize: 13, color: form.waMode === opt.val ? 'var(--ocean)' : 'var(--text)' }}>
+                  {opt.icon} {opt.label}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-hint)', marginTop: 3 }}>{opt.desc}</div>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Fonnte token input */}
+        {form.waMode === 'fonnte' && (
+          <div style={{ marginBottom: 16, padding: '14px 16px', background: 'var(--bg)', borderRadius: 10, border: '1px solid var(--border)' }}>
+            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>🌐 Konfigurasi Fonnte</div>
+
+            {/* Token input */}
+            <label className="form-label" style={{ marginBottom: 4 }}>Token API Fonnte</label>
+            <div style={{ position: 'relative', marginBottom: 4 }}>
+              <input
+                type={showToken ? 'text' : 'password'}
+                value={form.fonnteToken || ''}
+                onChange={e => setForm(p => ({ ...p, fonnteToken: e.target.value }))}
+                readOnly={!isAdmin}
+                placeholder="Paste token dari dashboard fonnte.com"
+                style={{
+                  width: '100%', padding: '9px 40px 9px 12px', borderRadius: 8,
+                  border: '1.5px solid var(--border)', fontSize: 13,
+                  background: isAdmin ? 'var(--surface)' : 'var(--bg)',
+                  color: 'var(--text)', boxSizing: 'border-box',
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => setShowToken(p => !p)}
+                style={{
+                  position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
+                  background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, color: 'var(--text-sec)',
+                }}
+              >
+                {showToken ? '🙈' : '👁️'}
+              </button>
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-hint)', marginBottom: 14 }}>
+              Dapatkan token di fonnte.com → Settings → Token
+            </div>
+
+            {/* Webhook URL */}
+            <label className="form-label" style={{ marginBottom: 4 }}>URL Webhook (untuk bot pesan masuk)</label>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 4 }}>
+              <input
+                readOnly
+                value={`${window.location.origin}/webhook/fonnte`}
+                style={{
+                  flex: 1, padding: '8px 12px', borderRadius: 8,
+                  border: '1.5px solid var(--border)', fontSize: 12,
+                  background: 'var(--bg)', color: 'var(--text-sec)',
+                  fontFamily: 'monospace', boxSizing: 'border-box',
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(`${window.location.origin}/webhook/fonnte`)
+                    .then(() => showToast('URL webhook disalin'))
+                    .catch(() => {})
+                }}
+                style={{
+                  padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border)',
+                  background: 'var(--surface-2)', cursor: 'pointer', fontSize: 12, color: 'var(--text)',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                📋 Salin
+              </button>
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-hint)', marginBottom: 12 }}>
+              Daftarkan URL ini di dashboard Fonnte → Settings → Webhook URL
+            </div>
+
+            {isAdmin && (
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={fonnteLoading || !form.fonnteToken}
+                onClick={async () => {
+                  setFonnteLoading(true)
+                  try {
+                    const result = await waAPI.testFonnte(form.fonnteToken)
+                    if (result.ok) {
+                      showToast(`Fonnte terhubung${result.device ? ': ' + result.device : ''}`)
+                    } else {
+                      showToast(result.message || 'Token tidak valid', 'error')
+                    }
+                  } catch (e) {
+                    showToast(e.message, 'error')
+                  } finally {
+                    setFonnteLoading(false)
+                  }
+                }}
+              >
+                {fonnteLoading ? 'Memeriksa...' : '🔌 Test Token'}
+              </Button>
+            )}
+          </div>
+        )}
+
         {/* Status bar */}
         <div style={{
           display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px',
@@ -391,8 +518,13 @@ export default function Settings() {
             boxShadow: waStatus.status === 'connected' ? `0 0 0 3px ${waInfo.color}33` : 'none',
           }} />
           <span style={{ fontWeight: 600, fontSize: 13 }}>{waInfo.text}</span>
+          {waStatus.status === 'connected' && waStatus.waMode === 'fonnte' && (
+            <span style={{ fontSize: 11, color: 'var(--ocean)', fontWeight: 600 }}>via Fonnte API</span>
+          )}
           {waStatus.phone && (
-            <span style={{ fontSize: 12, color: 'var(--text-sec)' }}>+{waStatus.phone}</span>
+            <span style={{ fontSize: 12, color: 'var(--text-sec)' }}>
+              {waStatus.waMode === 'fonnte' ? waStatus.phone : `+${waStatus.phone}`}
+            </span>
           )}
           <div style={{ flex: 1 }} />
           {isAdmin && waStatus.status === 'connected' && (
@@ -400,7 +532,12 @@ export default function Settings() {
               {waConnecting ? 'Memutus...' : '🔌 Putuskan'}
             </Button>
           )}
-          {isAdmin && waStatus.status === 'disconnected' && (
+          {isAdmin && waStatus.status === 'disconnected' && form.waMode === 'fonnte' && (
+            <Button variant="primary" size="sm" onClick={handleWAConnect} disabled={waConnecting || !form.fonnteToken}>
+              {waConnecting ? 'Memeriksa...' : '🔌 Verifikasi Token'}
+            </Button>
+          )}
+          {isAdmin && waStatus.status === 'disconnected' && form.waMode !== 'fonnte' && (
             <Button variant="primary" size="sm" onClick={handleWAConnect} disabled={waConnecting}>
               {waConnecting ? 'Menghubungkan...' : '📱 Hubungkan'}
             </Button>
@@ -412,16 +549,16 @@ export default function Settings() {
           )}
         </div>
 
-        {/* Connecting spinner */}
-        {waStatus.status === 'connecting' && (
+        {/* Connecting spinner — Baileys only */}
+        {waStatus.status === 'connecting' && form.waMode !== 'fonnte' && (
           <div style={{ textAlign: 'center', padding: '24px 0', marginBottom: 18 }}>
             <div style={{ fontSize: 32, marginBottom: 8 }}>⏳</div>
             <div style={{ fontSize: 13, color: 'var(--text-sec)' }}>Memulai koneksi, QR code akan muncul sebentar lagi...</div>
           </div>
         )}
 
-        {/* QR Code */}
-        {waStatus.status === 'qr' && (
+        {/* QR Code — Baileys only */}
+        {waStatus.status === 'qr' && form.waMode !== 'fonnte' && (
           <div style={{ textAlign: 'center', marginBottom: 18 }}>
             <div style={{ fontSize: 13, color: 'var(--text-sec)', marginBottom: 12 }}>
               Buka <b>WhatsApp</b> → <b>Perangkat Tertaut</b> → <b>Tautkan Perangkat</b>, lalu scan QR ini:
@@ -536,7 +673,7 @@ export default function Settings() {
           <div style={{ marginTop: 14 }}>
             <Button
               variant="primary"
-              onClick={() => save('WhatsApp', ['waEnabled','waTemplateReading','waTemplatePayment','waTemplateInstallPending','waTemplateInstallInvoice','waTemplateInstallPaid','waTemplateInstallDone'])}
+              onClick={() => save('WhatsApp', ['waEnabled','waMode','fonnteToken','waTemplateReading','waTemplatePayment','waTemplateInstallPending','waTemplateInstallInvoice','waTemplateInstallPaid','waTemplateInstallDone'])}
               disabled={saving === 'WhatsApp'}
             >
               {saving === 'WhatsApp' ? 'Menyimpan...' : 'Simpan Pengaturan WA'}
@@ -809,7 +946,7 @@ export default function Settings() {
             { label: 'Jatuh Tempo',      value: form.dueDays + ' hari setelah baca' },
             { label: 'Denda',            value: form.lateFee + '% / bulan' },
             { label: 'Tgl Baca',         value: 'Tgl ' + form.readDate + ' setiap bulan' },
-            { label: 'Notif WA',         value: form.waEnabled === 'true' ? '✅ Aktif' : '❌ Nonaktif' },
+            { label: 'Notif WA',         value: form.waEnabled === 'true' ? `✅ Aktif (${form.waMode === 'fonnte' ? 'Fonnte' : 'Baileys'})` : '❌ Nonaktif' },
           ].map(item => (
             <div key={item.label} style={{ background: 'var(--bg)', borderRadius: 10, padding: '10px 14px' }}>
               <div style={{ fontSize: 11, color: 'var(--text-hint)', textTransform: 'uppercase', letterSpacing: '0.3px', marginBottom: 4 }}>{item.label}</div>

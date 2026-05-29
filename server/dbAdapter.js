@@ -152,21 +152,40 @@ async function createPostgresDbAdapter(config) {
 
   function toPg(sql) { return convertPgPlaceholders(sql) }
 
-  // INSERT gets RETURNING id appended so we can return lastInsertRowid
-  async function pgRun(c, sql, params) {
+  // INSERT gets RETURNING id appended so we can return lastInsertRowid.
+  // inTx=true: gunakan SAVEPOINT agar kegagalan RETURNING tidak abort transaksi induk.
+  // (PostgreSQL abort seluruh TX saat query gagal — SAVEPOINT memungkinkan partial rollback.)
+  async function pgRun(c, sql, params, inTx = false) {
     const pgSql = toPg(sql)
     if (/^\s*INSERT\s/i.test(pgSql)) {
       const withReturning = pgSql.replace(/;\s*$/, '') + ' RETURNING id'
-      try {
-        const r = await c.query(withReturning, params)
-        return { lastInsertRowid: r.rows[0]?.id ?? null, changes: r.rowCount }
-      } catch (e) {
-        if (e.code === '42703') {
-          // Table has no "id" column (e.g. settings, tariffs) — run without RETURNING
-          const r = await c.query(pgSql, params)
-          return { lastInsertRowid: null, changes: r.rowCount }
+      if (inTx) {
+        await c.query('SAVEPOINT _pgrun_sp')
+        try {
+          const r = await c.query(withReturning, params)
+          await c.query('RELEASE SAVEPOINT _pgrun_sp')
+          return { lastInsertRowid: r.rows[0]?.id ?? null, changes: r.rowCount }
+        } catch (e) {
+          await c.query('ROLLBACK TO SAVEPOINT _pgrun_sp')
+          await c.query('RELEASE SAVEPOINT _pgrun_sp')
+          if (e.code === '42703') {
+            // Tabel tidak punya kolom id (misal: settings, tariffs) — jalankan tanpa RETURNING
+            const r = await c.query(pgSql, params)
+            return { lastInsertRowid: null, changes: r.rowCount }
+          }
+          throw e
         }
-        throw e
+      } else {
+        try {
+          const r = await c.query(withReturning, params)
+          return { lastInsertRowid: r.rows[0]?.id ?? null, changes: r.rowCount }
+        } catch (e) {
+          if (e.code === '42703') {
+            const r = await c.query(pgSql, params)
+            return { lastInsertRowid: null, changes: r.rowCount }
+          }
+          throw e
+        }
       }
     }
     const r = await c.query(pgSql, params)
@@ -195,7 +214,7 @@ async function createPostgresDbAdapter(config) {
       const tx = {
         get:  (s, p = []) => conn.query(toPg(s), p).then(r => r.rows[0] || null),
         all:  (s, p = []) => conn.query(toPg(s), p).then(r => r.rows),
-        run:  (s, p = []) => pgRun(conn, s, p),
+        run:  (s, p = []) => pgRun(conn, s, p, true),
         exec: (s)         => conn.query(s).then(() => {}),
       }
       const result = await fn(tx)

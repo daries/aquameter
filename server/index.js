@@ -267,7 +267,7 @@ router.patch('/readings/:id', async (req, res) => {
       const readDate = date || reading.date
       const bulan    = new Date(readDate + 'T00:00:00').toLocaleDateString('id-ID', { timeZone: getTimezone(), month: 'long', year: 'numeric' })
       const billData = bill ? await getBillByCustomerPeriod(appDb, reading.cust_id, reading.period) : null
-      const msg = (sett.waTemplateReading || '')
+      const msgBody = (sett.waTemplateReading || '')
         .replace('{nama}',          cust.name)
         .replace('{nomor_meter}',   cust.meter)
         .replace('{bulan}',         bulan)
@@ -278,6 +278,7 @@ router.patch('/readings/:id', async (req, res) => {
         .replace('{tagihan}',       billData ? Number(billData.total).toLocaleString('id-ID') : '—')
         .replace('{jatuh_tempo}',   billData ? billData.due_date : '—')
         .replace('{nama_perusahaan}', sett.companyName || 'PAMSIMAS')
+      const msg = `📝 *REVISI BACA METER*\n\n${msgBody}`
       wa.enqueue(cust.phone, msg, `Revisi baca meter – ${cust.name}`)
     }
 
@@ -449,6 +450,9 @@ router.put('/settings', async (req, res) => {
   try {
     const result = await updateSettings(appDb, req.body)
     _settingsCache = { ..._settingsCache, ...Object.fromEntries(Object.entries(req.body).map(([k, v]) => [k, String(v)])) }
+    if (req.body.waMode !== undefined || req.body.fonnteToken !== undefined) {
+      wa.setMode(_settingsCache.waMode, _settingsCache.fonnteToken)
+    }
     res.json(result)
   } catch (error) {
     res.status(500).json({ error: error.message })
@@ -1054,6 +1058,16 @@ router.get('/tickets/meta/statuses', requireAuth, async (_req, res) => {
   }
 })
 
+app.post('/api/whatsapp/test-fonnte', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    // token dari body dipakai untuk test preview; tanpa body pakai token yang sudah tersimpan
+    const result = await wa.testFonnte(req.body?.token || undefined)
+    res.json(result)
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
 app.post('/api/whatsapp/connect', requireAuth, requireAdmin, async (_req, res) => {
   try {
     await wa.connect()
@@ -1069,6 +1083,41 @@ app.post('/api/whatsapp/disconnect', requireAuth, requireAdmin, async (_req, res
     res.json({ ok: true })
   } catch (e) {
     res.status(500).json({ error: e.message })
+  }
+})
+
+// ─── Fonnte Webhook (public — dipanggil server Fonnte, tidak perlu auth) ───
+app.post('/webhook/fonnte', (req, res) => {
+  res.json({ ok: true })  // balas cepat agar Fonnte tidak retry
+
+  try {
+    const { sender, message, member } = req.body || {}
+
+    if (!sender || !message) return
+
+    // Abaikan pesan grup (sender group JID mengandung '-' atau member terisi)
+    if (String(sender).includes('-') || String(sender).includes('@g.us') || member) return
+
+    const settings = getSettings()
+    if (settings.waMode !== 'fonnte') return
+    if (settings.waEnabled !== 'true') return
+
+    let num = String(sender).replace(/\D/g, '')
+    if (num.startsWith('0'))   num = '62' + num.slice(1)
+    if (!num.startsWith('62')) num = '62' + num
+    const jid = num + '@s.whatsapp.net'
+
+    console.log(`📲 Fonnte webhook dari ${num}: "${message.substring(0, 60)}"`)
+
+    handleMessage(jid, num, message, {
+      db: appDb,
+      wa,
+      calcWaterCost,
+      getSettings,
+      calcDueDate,
+    }).catch(e => console.error('Fonnte webhook bot error:', e.message))
+  } catch (e) {
+    console.error('Fonnte webhook parse error:', e.message)
   }
 })
 
@@ -1133,7 +1182,9 @@ async function startServer() {
   app.listen(PORT, () => {
     console.log(`🚀 http://localhost:${PORT}  [${activeEngine}]`)
     console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}\n`)
-    if (getSettings().waEnabled === 'true') {
+    const settings = getSettings()
+    wa.setMode(settings.waMode, settings.fonnteToken)
+    if (settings.waEnabled === 'true') {
       console.log('📲 Menghubungkan WhatsApp...')
       wa.connect().catch(e => console.error('WA auto-connect error:', e.message))
     }
