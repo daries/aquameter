@@ -84,6 +84,18 @@ async function createReadingWithBill(db, payload) {
   let bill = null
 
   await db.transaction(async (tx) => {
+    const dupReading = await tx.get(
+      'SELECT id FROM readings WHERE cust_id = ? AND period = ?',
+      [payload.custId, payload.period]
+    )
+    if (dupReading) throw new Error('Pembacaan meter bulan ini sudah ada untuk pelanggan ini')
+
+    const dupBill = await tx.get(
+      'SELECT id FROM bills WHERE cust_id = ? AND period_key = ?',
+      [payload.custId, payload.period]
+    )
+    if (dupBill) throw new Error('Tagihan bulan ini sudah ada untuk pelanggan ini')
+
     const readingResult = await tx.run(`
       INSERT INTO readings (cust_id, last_stand, current_stand, usage, date, note, period, photo)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)

@@ -102,6 +102,10 @@ function initializeSqliteDatabase(db, { hashPwd }) {
     CREATE INDEX IF NOT EXISTS idx_bills_status       ON bills(status);
     CREATE INDEX IF NOT EXISTS idx_readings_cust_per  ON readings(cust_id, period);
   `)
+  // UNIQUE index — cegah duplikasi baca meter & tagihan sebulan untuk satu pelanggan
+  // Dibungkus try-catch: jika database lama sudah punya duplikat, index gagal tapi server tetap jalan
+  try { db.exec('CREATE UNIQUE INDEX IF NOT EXISTS uniq_readings_cust_period ON readings(cust_id, period)') } catch (_) {}
+  try { db.exec('CREATE UNIQUE INDEX IF NOT EXISTS uniq_bills_cust_period    ON bills(cust_id, period_key)') } catch (_) {}
   try {
     db.exec(`
       CREATE TABLE IF NOT EXISTS installations (
@@ -399,6 +403,8 @@ async function initializeDatabaseAsync(adapter, { hashPwd }) {
     'CREATE INDEX IF NOT EXISTS idx_bills_cust_id     ON bills(cust_id)',
     'CREATE INDEX IF NOT EXISTS idx_bills_status      ON bills(status)',
     'CREATE INDEX IF NOT EXISTS idx_readings_cust_per ON readings(cust_id, period)',
+    'CREATE UNIQUE INDEX IF NOT EXISTS uniq_readings_cust_period ON readings(cust_id, period)',
+    'CREATE UNIQUE INDEX IF NOT EXISTS uniq_bills_cust_period    ON bills(cust_id, period_key)',
   ]
   for (const idx of indexes) {
     try { await adapter.exec(idx) } catch (e) { /* sudah ada atau engine tidak support IF NOT EXISTS */ }

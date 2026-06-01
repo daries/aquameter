@@ -324,6 +324,9 @@ router.post('/readings', async (req, res) => {
   const usage  = currentStand - cust.last_stand
   const period = date.substring(0, 7)
 
+  const dupCheck = await getBillByCustomerPeriod(appDb, custId, period)
+  if (dupCheck) return res.status(409).json({ error: `Tagihan ${new Date(period + '-01T00:00:00').toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })} sudah ada untuk pelanggan ini` })
+
   const settings  = getSettings()
   const { cost }  = calcWaterCost(cust.grp, usage)
   const admin     = parseFloat(settings.adminFee) || 5000
