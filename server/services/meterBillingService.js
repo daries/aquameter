@@ -17,6 +17,25 @@ function mapReading(row) {
   }
 }
 
+function mapReadingNoPhoto(row) {
+  return {
+    id: row.id,
+    custId: row.cust_id,
+    lastStand: row.last_stand,
+    currentStand: row.current_stand,
+    usage: row.usage,
+    date: row.date,
+    note: row.note,
+    period: row.period,
+    hasPhoto: !!row.has_photo,
+    custName: row.cust_name,
+    meter: row.meter,
+    billId: row.bill_id,
+    billStatus: row.bill_status,
+    billTotal: row.bill_total,
+  }
+}
+
 function mapBill(row) {
   return {
     id: row.id,
@@ -40,20 +59,51 @@ function mapBill(row) {
 }
 
 async function listReadings(db, filters = {}) {
-  const { custId, period, limit = 50 } = filters
-  let sql = `SELECT r.*, c.name as cust_name, c.meter,
-           b.id as bill_id, b.status as bill_status, b.total as bill_total
-           FROM readings r
-           JOIN customers c ON c.id = r.cust_id
-           LEFT JOIN bills b ON b.cust_id = r.cust_id AND b.period_key = r.period
-           WHERE 1=1`
+  const { custId, period, limit = 50, page, search = '', noPhoto = false } = filters
+
+  const selectCols = noPhoto
+    ? `SELECT r.id, r.cust_id, r.last_stand, r.current_stand, r.usage, r.date, r.note, r.period,
+             CASE WHEN r.photo IS NOT NULL THEN 1 ELSE 0 END as has_photo,
+             c.name as cust_name, c.meter,
+             b.id as bill_id, b.status as bill_status, b.total as bill_total`
+    : `SELECT r.*, c.name as cust_name, c.meter,
+             b.id as bill_id, b.status as bill_status, b.total as bill_total`
+
+  let baseSql = `FROM readings r
+    JOIN customers c ON c.id = r.cust_id
+    LEFT JOIN bills b ON b.cust_id = r.cust_id AND b.period_key = r.period
+    WHERE 1=1`
   const params = []
-  if (custId) { sql += ' AND r.cust_id = ?'; params.push(custId) }
-  if (period) { sql += ' AND r.period = ?'; params.push(period) }
-  sql += ' ORDER BY r.id DESC LIMIT ?'
-  params.push(parseInt(limit))
-  const rows = await db.all(sql, params)
-  return rows.map(mapReading)
+  if (custId) { baseSql += ' AND r.cust_id = ?'; params.push(custId) }
+  if (period) { baseSql += ' AND r.period = ?'; params.push(period) }
+  if (search) {
+    baseSql += ' AND (c.name LIKE ? OR c.meter LIKE ?)'
+    params.push(`%${search}%`, `%${search}%`)
+  }
+
+  if (page !== undefined) {
+    const pg = Math.max(1, parseInt(page))
+    const lim = parseInt(limit)
+    const offset = (pg - 1) * lim
+    const countRow = await db.get(`SELECT COUNT(*) as total ${baseSql}`, params)
+    const rows = await db.all(
+      `${selectCols} ${baseSql} ORDER BY r.id DESC LIMIT ? OFFSET ?`,
+      [...params, lim, offset]
+    )
+    const mapper = noPhoto ? mapReadingNoPhoto : mapReading
+    return { data: rows.map(mapper), total: countRow.total }
+  }
+
+  const rows = await db.all(
+    `${selectCols} ${baseSql} ORDER BY r.id DESC LIMIT ?`,
+    [...params, parseInt(limit)]
+  )
+  return rows.map(noPhoto ? mapReadingNoPhoto : mapReading)
+}
+
+async function getReadingPhoto(db, id) {
+  const row = await db.get('SELECT photo FROM readings WHERE id = ?', [id])
+  return row?.photo || null
 }
 
 async function getReadingRowById(db, id) {
@@ -124,13 +174,19 @@ async function createReadingWithBill(db, payload) {
 
 async function updateReadingAndBill(db, payload) {
   await db.transaction(async (tx) => {
-    await tx.run('UPDATE readings SET current_stand=?, usage=?, date=?, note=? WHERE id=?', [
+    const hasNewPhoto = payload.photo !== undefined
+    const sql = hasNewPhoto
+      ? 'UPDATE readings SET current_stand=?, usage=?, date=?, note=?, photo=? WHERE id=?'
+      : 'UPDATE readings SET current_stand=?, usage=?, date=?, note=? WHERE id=?'
+    const params = [
       payload.newStand,
       payload.usage,
       payload.date || payload.reading.date,
       payload.note ?? payload.reading.note,
+      ...(hasNewPhoto ? [payload.photo] : []),
       payload.reading.id,
-    ])
+    ]
+    await tx.run(sql, params)
 
     if (payload.bill) {
       await tx.run('UPDATE bills SET usage=?, water_cost=?, ppj=?, total=? WHERE id=?', [
@@ -217,6 +273,7 @@ async function markBillUnpaid(db, billId) {
 module.exports = {
   listReadings,
   getReadingRowById,
+  getReadingPhoto,
   getCustomerRowById,
   getBillByCustomerPeriod,
   createReadingWithBill,

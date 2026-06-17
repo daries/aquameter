@@ -15,15 +15,24 @@ function mapCustomer(row) {
 }
 
 async function listCustomers(db, filters = {}) {
-  const { status = 'active', search = '' } = filters
-  let sql = 'SELECT * FROM customers WHERE status = ?'
+  const { status = 'active', search = '', page, limit = 10 } = filters
+  let baseSql = 'FROM customers WHERE status = ?'
   const params = [status]
   if (search) {
-    sql += ' AND (name LIKE ? OR meter LIKE ? OR address LIKE ?)'
+    baseSql += ' AND (name LIKE ? OR meter LIKE ? OR address LIKE ?)'
     params.push(`%${search}%`, `%${search}%`, `%${search}%`)
   }
-  sql += ' ORDER BY name'
-  const rows = await db.all(sql, params)
+
+  if (page !== undefined) {
+    const pg = Math.max(1, parseInt(page))
+    const lim = parseInt(limit)
+    const offset = (pg - 1) * lim
+    const countRow = await db.get(`SELECT COUNT(*) as total ${baseSql}`, params)
+    const rows = await db.all(`SELECT * ${baseSql} ORDER BY name LIMIT ? OFFSET ?`, [...params, lim, offset])
+    return { data: rows.map(mapCustomer), total: countRow.total }
+  }
+
+  const rows = await db.all(`SELECT * ${baseSql} ORDER BY name`, params)
   return rows.map(mapCustomer)
 }
 

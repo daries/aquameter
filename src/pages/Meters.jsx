@@ -5,7 +5,6 @@ import { InvoiceModal } from '../components/InvoiceModal'
 import { fmtRupiah } from '../utils/tariff'
 import { readingAPI, settingsAPI, tariffAPI, customerAPI } from '../utils/api'
 
-// Hitung preview tagihan dari tarif + settings yang diambil dari server
 function calcPreview(liveTariffs, group, usage, liveSettings) {
   if (!liveTariffs || !liveTariffs[group] || usage <= 0) return null
   const blocks    = liveTariffs[group]
@@ -49,21 +48,34 @@ function StepBar({ step }) {
   )
 }
 
-// ─── Customer Search — only unread customers ───
-function CustomerSearch({ customers, readIds, onSelect }) {
-  const [query, setQuery] = useState('')
-  const [open, setOpen]   = useState(false)
-  const wrapRef           = useRef(null)
+// ─── Customer Search — server-side search, hanya pelanggan belum dibaca ───
+function CustomerSearch({ readIds, onSelect }) {
+  const [query,    setQuery]    = useState('')
+  const [results,  setResults]  = useState([])
+  const [open,     setOpen]     = useState(false)
+  const [loading,  setLoading]  = useState(false)
+  const wrapRef    = useRef(null)
+  const debounceRef = useRef(null)
 
-  // Only show customers that haven't been read this period
-  const unreadCustomers = customers.filter(c => !readIds.has(c.id))
+  const doSearch = useCallback(async (q) => {
+    setLoading(true)
+    try {
+      const res = await customerAPI.getAll({ status: 'active', search: q, limit: 15, page: 1 })
+      const list = res.data || res
+      // Saring yang sudah dibaca bulan ini
+      setResults(list.filter(c => !readIds.has(c.id)).slice(0, 8))
+    } catch {
+      setResults([])
+    } finally {
+      setLoading(false)
+    }
+  }, [readIds])
 
-  const filtered = query.length < 1
-    ? unreadCustomers.slice(0, 8)
-    : unreadCustomers.filter(c =>
-        c.name.toLowerCase().includes(query.toLowerCase()) ||
-        c.meter.toLowerCase().includes(query.toLowerCase())
-      ).slice(0, 8)
+  useEffect(() => {
+    clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => doSearch(query), 300)
+    return () => clearTimeout(debounceRef.current)
+  }, [query, doSearch])
 
   useEffect(() => {
     const handler = (e) => {
@@ -73,17 +85,8 @@ function CustomerSearch({ customers, readIds, onSelect }) {
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  const select = (c) => {
-    setQuery(c.name)
-    setOpen(false)
-    onSelect(c)
-  }
-
-  const clear = () => {
-    setQuery('')
-    setOpen(false)
-    onSelect(null)
-  }
+  const select = (c) => { setQuery(c.name); setOpen(false); onSelect(c) }
+  const clear  = () => { setQuery(''); setOpen(false); onSelect(null) }
 
   return (
     <div ref={wrapRef} style={{ position: 'relative' }}>
@@ -93,19 +96,22 @@ function CustomerSearch({ customers, readIds, onSelect }) {
         <input
           type="text"
           className="form-input search-with-icon"
-          placeholder={unreadCustomers.length === 0 ? 'Semua pelanggan sudah dibaca!' : `${unreadCustomers.length} pelanggan belum dibaca...`}
+          placeholder="Ketik nama atau nomor meter..."
           value={query}
           onChange={e => { setQuery(e.target.value); setOpen(true) }}
           onFocus={() => setOpen(true)}
           autoComplete="off"
-          disabled={unreadCustomers.length === 0}
         />
         {query && <button className="search-clear" onClick={clear}>✕</button>}
       </div>
 
       {open && (
         <div className="search-dropdown">
-          {filtered.length > 0 ? filtered.map(c => (
+          {loading ? (
+            <div style={{ padding: '14px 16px', color: 'var(--text-hint)', fontSize: 13, textAlign: 'center' }}>
+              Mencari...
+            </div>
+          ) : results.length > 0 ? results.map(c => (
             <div key={c.id} className="search-dropdown-item" onClick={() => select(c)}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <span style={{ fontSize: 18 }}>💧</span>
@@ -119,7 +125,7 @@ function CustomerSearch({ customers, readIds, onSelect }) {
             </div>
           )) : (
             <div style={{ padding: '14px 16px', color: 'var(--text-hint)', fontSize: 13, textAlign: 'center' }}>
-              Tidak ada pelanggan yang cocok
+              {query ? 'Tidak ada pelanggan yang cocok' : 'Ketik untuk mencari pelanggan'}
             </div>
           )}
         </div>
@@ -128,9 +134,9 @@ function CustomerSearch({ customers, readIds, onSelect }) {
   )
 }
 
-// ─── Compress image ke JPEG dengan resize ───────────────────────────────────
-const MAX_DIM  = 1024  // px — cukup untuk baca angka meter
-const QUALITY  = 0.78  // JPEG 78% — jernih tapi ringan
+// ─── Compress image ke JPEG dengan resize ───
+const MAX_DIM  = 1024
+const QUALITY  = 0.78
 
 function compressDataUrl(dataUrl, maxDim = MAX_DIM, quality = QUALITY) {
   return new Promise((resolve) => {
@@ -144,13 +150,12 @@ function compressDataUrl(dataUrl, maxDim = MAX_DIM, quality = QUALITY) {
       canvas.getContext('2d').drawImage(img, 0, 0, w, h)
       resolve(canvas.toDataURL('image/jpeg', quality))
     }
-    img.onerror = () => resolve(dataUrl)   // fallback: kirim asli
+    img.onerror = () => resolve(dataUrl)
     img.src = dataUrl
   })
 }
 
 function sizeKb(dataUrl) {
-  // Base64 → estimasi byte: setiap 4 karakter ≈ 3 byte
   return Math.round((dataUrl.length - dataUrl.indexOf(',') - 1) * 3 / 4 / 1024)
 }
 
@@ -159,7 +164,7 @@ function CameraCapture({ onCapture }) {
   const videoRef     = useRef(null)
   const canvasRef    = useRef(null)
   const fileInputRef = useRef(null)
-  const streamRef    = useRef(null)   // ref agar stopCamera tidak perlu stream di closure
+  const streamRef    = useRef(null)
   const [stream,      setStream]      = useState(null)
   const [photo,       setPhoto]       = useState(null)
   const [photoInfo,   setPhotoInfo]   = useState(null)
@@ -200,7 +205,6 @@ function CameraCapture({ onCapture }) {
     canvas.getContext('2d').drawImage(video, 0, 0)
     const raw = canvas.toDataURL('image/jpeg', 1.0)
     const origKb = sizeKb(raw)
-
     setCompressing(true); stopCamera()
     const compressed = await compressDataUrl(raw)
     const kb = sizeKb(compressed)
@@ -210,8 +214,6 @@ function CameraCapture({ onCapture }) {
 
   const retake = () => { setPhoto(null); setPhotoInfo(null); onCapture(null); startCamera() }
 
-  // iOS Safari: stream kamera aktif mencegah galeri terbuka.
-  // Hentikan stream dulu, tunggu sebentar, baru buka file picker.
   const openGallery = () => {
     if (compressing) return
     stopCamera()
@@ -220,12 +222,10 @@ function CameraCapture({ onCapture }) {
 
   const handleFileUpload = async (e) => {
     const file = e.target.files[0]
-    // Reset value agar onChange terpicu lagi jika pilih file sama
     e.target.value = ''
     if (!file) return
     const origKb = Math.round(file.size / 1024)
     setCompressing(true)
-
     const reader = new FileReader()
     reader.onload = async (ev) => {
       const compressed = await compressDataUrl(ev.target.result)
@@ -239,13 +239,7 @@ function CameraCapture({ onCapture }) {
   return (
     <div className="camera-wrap">
       <canvas ref={canvasRef} style={{ display: 'none' }} />
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*"
-        onChange={handleFileUpload}
-        style={{ display: 'none' }}
-      />
+      <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileUpload} style={{ display: 'none' }} />
 
       {photo ? (
         <div className="camera-preview-wrap">
@@ -299,11 +293,40 @@ function CameraCapture({ onCapture }) {
 
 // ─── Edit Reading Modal ───
 function EditReadingModal({ reading, onSave, onClose }) {
-  const [stand, setStand] = useState(String(reading.currentStand))
-  const [date,  setDate]  = useState(reading.date)
-  const [note,  setNote]  = useState(reading.note || '')
-  const [error, setError] = useState('')
-  const [saving, setSaving] = useState(false)
+  const [stand,   setStand]   = useState(String(reading.currentStand))
+  const [date,    setDate]    = useState(reading.date)
+  const [note,    setNote]    = useState(reading.note || '')
+  const [error,   setError]   = useState('')
+  const [saving,  setSaving]  = useState(false)
+
+  // Photo state
+  const [currentPhoto,  setCurrentPhoto]  = useState(reading.photo || null)
+  const [newPhoto,      setNewPhoto]      = useState(null)   // null = tidak ganti
+  const [showCamera,    setShowCamera]    = useState(false)
+  const [fetchingPhoto, setFetchingPhoto] = useState(false)
+
+  // Lazy-load foto yang ada jika hanya ada flag hasPhoto
+  useEffect(() => {
+    if (!reading.photo && reading.hasPhoto) {
+      setFetchingPhoto(true)
+      readingAPI.getPhoto(reading.id)
+        .then(r => setCurrentPhoto(r.photo))
+        .catch(() => {})
+        .finally(() => setFetchingPhoto(false))
+    }
+  }, [])
+
+  const handleReplacePhoto = (dataUrl) => {
+    if (dataUrl) {
+      setNewPhoto(dataUrl)
+      setShowCamera(false)
+    }
+  }
+
+  const cancelPhotoReplace = () => {
+    setNewPhoto(null)
+    setShowCamera(false)
+  }
 
   const handleSave = async () => {
     const val = parseFloat(stand)
@@ -313,7 +336,9 @@ function EditReadingModal({ reading, onSave, onClose }) {
     }
     setSaving(true)
     try {
-      const updated = await readingAPI.update(reading.id, { currentStand: val, date, note })
+      const payload = { currentStand: val, date, note }
+      if (newPhoto !== null) payload.photo = newPhoto
+      const updated = await readingAPI.update(reading.id, payload)
       onSave(updated)
     } catch (err) {
       setError(err.message)
@@ -322,9 +347,11 @@ function EditReadingModal({ reading, onSave, onClose }) {
     }
   }
 
+  const displayPhoto = newPhoto || currentPhoto
+
   return (
     <div className="modal-overlay open" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal" style={{ width: '100%', maxWidth: 440 }}>
+      <div className="modal" style={{ width: '100%', maxWidth: 480 }}>
         <div className="modal-title">✏️ Edit Pembacaan Meter</div>
 
         <div style={{ background: 'var(--bg)', borderRadius: 10, padding: '10px 14px', marginBottom: 16, fontSize: 13 }}>
@@ -370,6 +397,58 @@ function EditReadingModal({ reading, onSave, onClose }) {
           </div>
         </div>
 
+        {/* ─── Bagian foto ─── */}
+        <div style={{ marginBottom: 16 }}>
+          <label className="form-label" style={{ marginBottom: 8, display: 'block' }}>
+            Foto Meter
+            {newPhoto && <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--ocean)', fontWeight: 600 }}>· Foto baru</span>}
+          </label>
+
+          {/* Tampilkan foto saat ini atau baru */}
+          {fetchingPhoto ? (
+            <div style={{ fontSize: 12, color: 'var(--text-hint)', marginBottom: 8 }}>Memuat foto...</div>
+          ) : displayPhoto ? (
+            <div style={{ position: 'relative', marginBottom: 8 }}>
+              <img
+                src={displayPhoto}
+                alt="Foto meter"
+                style={{ width: '100%', maxHeight: 200, objectFit: 'cover', borderRadius: 8, display: 'block' }}
+              />
+              {newPhoto && (
+                <div style={{ position: 'absolute', top: 6, left: 6, background: 'var(--ocean)', color: '#fff',
+                  fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 99 }}>
+                  FOTO BARU
+                </div>
+              )}
+            </div>
+          ) : (
+            <div style={{ fontSize: 12, color: 'var(--text-hint)', marginBottom: 8, padding: '10px 0' }}>
+              Belum ada foto
+            </div>
+          )}
+
+          {/* Tombol / kamera ganti foto */}
+          {!showCamera ? (
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn btn-ghost btn-sm" onClick={() => setShowCamera(true)}>
+                📷 {displayPhoto ? 'Ganti Foto' : 'Tambah Foto'}
+              </button>
+              {newPhoto && (
+                <button className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)' }} onClick={cancelPhotoReplace}>
+                  ✕ Batalkan
+                </button>
+              )}
+            </div>
+          ) : (
+            <div>
+              <CameraCapture onCapture={handleReplacePhoto} />
+              <button className="btn btn-ghost btn-sm" style={{ marginTop: 8 }} onClick={() => setShowCamera(false)}>
+                Tutup Kamera
+              </button>
+            </div>
+          )}
+        </div>
+
         <div className="modal-actions">
           <Button variant="ghost" onClick={onClose}>Batal</Button>
           <Button variant="primary" onClick={handleSave} disabled={saving} icon="💾">
@@ -381,26 +460,59 @@ function EditReadingModal({ reading, onSave, onClose }) {
   )
 }
 
-// Muat ulang readings dari API (centralized agar tidak ada double)
-async function loadReadings(setApiReadings, setLoadingReadings) {
-  try {
-    const data = await readingAPI.getAll({ limit: 100 })
-    setApiReadings(data)
-  } catch (e) { /* ignore */ }
-  finally { setLoadingReadings(false) }
+// ─── Komponen pagination sederhana ───
+function Pagination({ page, totalPages, onChange }) {
+  if (totalPages <= 1) return null
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 12 }}>
+      <button
+        className="btn btn-ghost btn-sm"
+        disabled={page <= 1}
+        onClick={() => onChange(page - 1)}
+        style={{ minWidth: 32 }}
+      >‹</button>
+      <span style={{ fontSize: 12, color: 'var(--text-sec)' }}>
+        {page} / {totalPages}
+      </span>
+      <button
+        className="btn btn-ghost btn-sm"
+        disabled={page >= totalPages}
+        onClick={() => onChange(page + 1)}
+        style={{ minWidth: 32 }}
+      >›</button>
+    </div>
+  )
 }
+
+const HIST_LIMIT = 10
 
 // ─── Main page ───
 export default function Meters() {
   const { showToast } = useStore()
 
-  const [customers,      setCustomers]      = useState([])
-  const [apiReadings,    setApiReadings]    = useState([])
-  const [loadingReadings, setLoadingReadings] = useState(true)
-  const [liveSettings,   setLiveSettings]   = useState({})
-  const [liveTariffs,    setLiveTariffs]    = useState(null)
+  // readIds — semua custId yang sudah dibaca bulan ini (tanpa foto, ringan)
+  const [readIds,         setReadIds]         = useState(new Set())
+  const [totalCustomers,  setTotalCustomers]  = useState(0)
+  const [liveSettings,    setLiveSettings]    = useState({})
+  const [liveTariffs,     setLiveTariffs]     = useState(null)
   const loadedRef = useRef(false)
 
+  // Riwayat pembacaan — paginated dari backend
+  const [histItems,    setHistItems]    = useState([])
+  const [histTotal,    setHistTotal]    = useState(0)
+  const [histPage,     setHistPage]     = useState(1)
+  const [histSearch,   setHistSearch]   = useState('')
+  const [histPeriod,   setHistPeriod]   = useState('')
+  const [histLoading,  setHistLoading]  = useState(true)
+  const histDebounceRef = useRef(null)
+
+  // Status grid pelanggan (lazy load, bisa disembunyikan)
+  const [statusCustomers,  setStatusCustomers]  = useState([])
+  const [showStatusPanel,  setShowStatusPanel]  = useState(
+    () => localStorage.getItem('meters_show_status') !== 'false'
+  )
+
+  // Form state
   const [step, setStep]             = useState(1)
   const [customer, setCustomer]     = useState(null)
   const [photo, setPhoto]           = useState(null)
@@ -412,39 +524,99 @@ export default function Meters() {
   const [newBill, setNewBill]       = useState(null)
   const [editingReading, setEditingReading] = useState(null)
   const [photoPreview,   setPhotoPreview]   = useState(null)
+  const [loadingPhoto,   setLoadingPhoto]   = useState(false)
 
-  const thisMonth       = new Date().toLocaleDateString('sv-SE').substring(0, 7)
-  const readIds         = new Set(apiReadings.filter(r => r.period === thisMonth).map(r => r.custId))
-  const historyReadings = apiReadings.filter(r => r.period === thisMonth)
+  const thisMonth = new Date().toLocaleDateString('sv-SE').substring(0, 7)
+
+  // histPeriod default = bulan ini (setelah mount)
+  const effectivePeriod = histPeriod || thisMonth
 
   const usage   = customer ? Math.max(0, parseFloat(currentStand || 0) - customer.lastStand) : 0
   const preview = calcPreview(liveTariffs, customer?.group, usage, liveSettings)
 
   const progress = {
     done:  readIds.size,
-    total: customers.length,
-    pct:   customers.length ? Math.round(readIds.size / customers.length * 100) : 0,
+    total: totalCustomers,
+    pct:   totalCustomers ? Math.round(readIds.size / totalCustomers * 100) : 0,
   }
 
-  const refreshCustomers = () =>
-    customerAPI.getAll({ status: 'active' }).then(setCustomers).catch(() => {})
+  // Muat readIds — semua pembacaan bulan ini, tanpa foto (ringan)
+  const loadReadIds = useCallback(async () => {
+    try {
+      const data = await readingAPI.getAll({ period: thisMonth, noPhoto: true, limit: 999 })
+      const list = Array.isArray(data) ? data : (data.data || [])
+      setReadIds(new Set(list.map(r => r.custId)))
+    } catch { /* ignore */ }
+  }, [thisMonth])
 
-  // Muat semua data dari server — satu kali
+  // Muat total pelanggan aktif (untuk progress bar)
+  const loadCustomerCount = useCallback(async () => {
+    try {
+      const res = await customerAPI.getAll({ status: 'active', page: 1, limit: 1 })
+      if (res && typeof res.total === 'number') setTotalCustomers(res.total)
+      else setTotalCustomers((res.data || res).length)
+    } catch { /* ignore */ }
+  }, [])
+
+  // Muat status grid pelanggan (lazy, setelah data kritis siap)
+  const loadStatusCustomers = useCallback(async () => {
+    try {
+      const data = await customerAPI.getAll({ status: 'active' })
+      setStatusCustomers(Array.isArray(data) ? data : (data.data || []))
+    } catch { /* ignore */ }
+  }, [])
+
+  // Muat riwayat pembacaan (paginated)
+  const loadHistory = useCallback(async (page, search, period) => {
+    setHistLoading(true)
+    try {
+      const res = await readingAPI.getAll({ period: period || thisMonth, page, limit: HIST_LIMIT, search: search || '' })
+      if (res && res.data !== undefined) {
+        setHistItems(res.data)
+        setHistTotal(res.total)
+      } else {
+        setHistItems(Array.isArray(res) ? res : [])
+        setHistTotal(0)
+      }
+    } catch { /* ignore */ }
+    finally { setHistLoading(false) }
+  }, [thisMonth])
+
+  // Muat semua data awal — paralel, ringan
   useEffect(() => {
     if (loadedRef.current) return
     loadedRef.current = true
 
-    loadReadings(setApiReadings, setLoadingReadings)
-    refreshCustomers()
+    loadReadIds()
+    loadCustomerCount()
+    loadHistory(1, '', thisMonth)
 
-    settingsAPI.get()
-      .then(data => setLiveSettings(data))
-      .catch(() => {})
+    settingsAPI.get().then(setLiveSettings).catch(() => {})
+    tariffAPI.getAll().then(setLiveTariffs).catch(() => {})
 
-    tariffAPI.getAll()
-      .then(data => setLiveTariffs(data))
-      .catch(() => {})
+    // Status grid dimuat hanya jika panel sedang aktif ditampilkan
+    if (localStorage.getItem('meters_show_status') !== 'false') {
+      setTimeout(loadStatusCustomers, 800)
+    }
   }, [])
+
+  // Reload history saat filter berubah (debounce pada search)
+  useEffect(() => {
+    clearTimeout(histDebounceRef.current)
+    histDebounceRef.current = setTimeout(() => {
+      loadHistory(histPage, histSearch, effectivePeriod)
+    }, histSearch ? 400 : 0)
+    return () => clearTimeout(histDebounceRef.current)
+  }, [histPage, histSearch, effectivePeriod])
+
+  const histTotalPages = Math.max(1, Math.ceil(histTotal / HIST_LIMIT))
+
+  const toggleStatusPanel = () => {
+    const next = !showStatusPanel
+    setShowStatusPanel(next)
+    localStorage.setItem('meters_show_status', String(next))
+    if (next && statusCustomers.length === 0) loadStatusCustomers()
+  }
 
   const handleSelectCustomer = (c) => {
     setCustomer(c); setPhoto(null); setCurrentStand(''); setStandError('')
@@ -470,10 +642,12 @@ export default function Meters() {
       const { bill } = await readingAPI.create({
         custId: customer.id, currentStand: val, date, note, photo,
       })
-      // Reload dari API agar riwayat akurat dan tidak double
-      setLoadingReadings(true)
-      await loadReadings(setApiReadings, setLoadingReadings)
-      await refreshCustomers()
+      await loadReadIds()
+      await loadCustomerCount()
+      await loadHistory(1, histSearch, effectivePeriod)
+      setHistPage(1)
+      // Reload status grid juga
+      loadStatusCustomers()
       setNewBill(bill)
       showToast(`Tagihan ${bill.invoiceNo} berhasil dibuat! Total: ${fmtRupiah(bill.total)}`)
       resetForm()
@@ -486,9 +660,8 @@ export default function Meters() {
 
   const handleEditSave = async () => {
     setEditingReading(null)
-    setLoadingReadings(true)
-    await loadReadings(setApiReadings, setLoadingReadings)
-    await refreshCustomers()
+    await loadReadIds()
+    await loadHistory(histPage, histSearch, effectivePeriod)
     showToast('Pembacaan berhasil diperbarui')
   }
 
@@ -496,6 +669,33 @@ export default function Meters() {
     setCustomer(null); setPhoto(null); setCurrentStand(''); setNote('')
     setStandError(''); setStep(1)
   }
+
+  // Buka foto — lazy load dari server
+  const openPhoto = async (reading) => {
+    if (reading.photo) {
+      setPhotoPreview(reading.photo)
+      return
+    }
+    setLoadingPhoto(true)
+    try {
+      const { photo: p } = await readingAPI.getPhoto(reading.id)
+      setPhotoPreview(p)
+    } catch {
+      showToast('Gagal memuat foto', 'error')
+    } finally {
+      setLoadingPhoto(false)
+    }
+  }
+
+  // Opsi bulan untuk filter riwayat (12 bulan ke belakang)
+  const monthOptions = Array.from({ length: 12 }, (_, i) => {
+    const d = new Date()
+    d.setDate(1)
+    d.setMonth(d.getMonth() - i)
+    const val = d.toLocaleDateString('sv-SE').substring(0, 7)
+    const label = d.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })
+    return { val, label }
+  })
 
   return (
     <div>
@@ -531,10 +731,8 @@ export default function Meters() {
             <div className="step-section">
               <div className="step-section-label">1. Pilih Pelanggan</div>
               <CustomerSearch
-                customers={customers}
                 readIds={readIds}
                 onSelect={handleSelectCustomer}
-                selectedId={customer?.id}
               />
               {customer && (
                 <div className="customer-info-card">
@@ -658,12 +856,41 @@ export default function Meters() {
         {/* ─── Right: Riwayat + Status ─── */}
         <div>
           <Card>
-            <div className="card-header">
+            <div className="card-header" style={{ marginBottom: 12 }}>
               <div className="card-title">Riwayat Pembacaan</div>
               <span style={{ fontSize: 12, color: 'var(--text-hint)' }}>
-                {loadingReadings ? 'Memuat...' : `${historyReadings.length} data · ${new Date().toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })}`}
+                {histLoading ? 'Memuat...' : `${histTotal} data`}
               </span>
             </div>
+
+            {/* Filter & Search */}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+              <div className="search-input-wrap" style={{ flex: 1, minWidth: 140 }}>
+                <span className="search-icon">🔍</span>
+                <input
+                  type="text"
+                  className="form-input search-with-icon"
+                  style={{ fontSize: 12 }}
+                  placeholder="Cari nama / nomor meter..."
+                  value={histSearch}
+                  onChange={e => { setHistSearch(e.target.value); setHistPage(1) }}
+                />
+                {histSearch && (
+                  <button className="search-clear" onClick={() => { setHistSearch(''); setHistPage(1) }}>✕</button>
+                )}
+              </div>
+              <select
+                className="form-input"
+                style={{ fontSize: 12, minWidth: 140, flex: '0 0 auto' }}
+                value={histPeriod}
+                onChange={e => { setHistPeriod(e.target.value); setHistPage(1) }}
+              >
+                {monthOptions.map(m => (
+                  <option key={m.val} value={m.val}>{m.label}</option>
+                ))}
+              </select>
+            </div>
+
             <div className="table-wrap">
               <table>
                 <thead>
@@ -679,11 +906,15 @@ export default function Meters() {
                   </tr>
                 </thead>
                 <tbody>
-                  {historyReadings.length === 0 && !loadingReadings && (
-                    <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--text-hint)', padding: 20 }}>Belum ada riwayat pembacaan</td></tr>
+                  {histLoading && (
+                    <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--text-hint)', padding: 20 }}>Memuat...</td></tr>
                   )}
-                  {historyReadings.map(r => {
-                    const c = customers.find(c => c.id === r.custId)
+                  {!histLoading && histItems.length === 0 && (
+                    <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--text-hint)', padding: 20 }}>
+                      {histSearch ? 'Tidak ada hasil pencarian' : 'Belum ada riwayat pembacaan'}
+                    </td></tr>
+                  )}
+                  {!histLoading && histItems.map(r => {
                     const canEdit = r.billStatus !== 'paid'
                     const statusColor = r.billStatus === 'paid'
                       ? 'var(--mint)' : r.billStatus === 'overdue' ? 'var(--danger)' : '#f59e0b'
@@ -692,8 +923,8 @@ export default function Meters() {
                     return (
                       <tr key={r.id}>
                         <td>
-                          <b style={{ fontSize: 12 }}>{c?.name || r.custName || '—'}</b>
-                          <br /><span style={{ fontSize: 10, color: 'var(--text-hint)' }}>{c?.meter || r.meter}</span>
+                          <b style={{ fontSize: 12 }}>{r.custName || '—'}</b>
+                          <br /><span style={{ fontSize: 10, color: 'var(--text-hint)' }}>{r.meter}</span>
                         </td>
                         <td className="hide-mobile" style={{ fontSize: 11, color: 'var(--text-sec)', whiteSpace: 'nowrap' }}>
                           {r.date ? new Date(r.date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: '2-digit' }) : '—'}
@@ -707,8 +938,13 @@ export default function Meters() {
                           ) : <span style={{ color: 'var(--text-hint)', fontSize: 10 }}>—</span>}
                         </td>
                         <td>
-                          {r.photo
-                            ? <button className="btn btn-ghost btn-sm" style={{ fontSize: 14, padding: '2px 6px' }} onClick={() => setPhotoPreview(r.photo)} title="Lihat foto">📷</button>
+                          {(r.photo || r.hasPhoto)
+                            ? <button
+                                className="btn btn-ghost btn-sm"
+                                style={{ fontSize: 14, padding: '2px 6px' }}
+                                onClick={() => openPhoto(r)}
+                                title="Lihat foto"
+                              >📷</button>
                             : <span style={{ fontSize: 11, color: 'var(--text-hint)' }}>—</span>
                           }
                         </td>
@@ -718,9 +954,7 @@ export default function Meters() {
                               className="btn btn-ghost btn-sm"
                               style={{ fontSize: 11, padding: '3px 8px' }}
                               onClick={() => setEditingReading(r)}
-                            >
-                              ✏️
-                            </button>
+                            >✏️</button>
                           )}
                         </td>
                       </tr>
@@ -729,40 +963,66 @@ export default function Meters() {
                 </tbody>
               </table>
             </div>
+
+            <Pagination
+              page={histPage}
+              totalPages={histTotalPages}
+              onChange={p => setHistPage(p)}
+            />
           </Card>
 
           {/* Status bulan ini */}
           <Card>
             <div className="card-header">
               <div className="card-title">Status Bulan Ini</div>
-              <span style={{ fontSize: 12, color: 'var(--text-hint)' }}>
-                {progress.done} sudah · {progress.total - progress.done} belum
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                {showStatusPanel && (
+                  <span style={{ fontSize: 12, color: 'var(--text-hint)' }}>
+                    {progress.done} sudah · {progress.total - progress.done} belum
+                  </span>
+                )}
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={toggleStatusPanel}
+                  style={{ fontSize: 11, padding: '3px 10px' }}
+                >
+                  {showStatusPanel ? '▲ Sembunyikan' : '▼ Tampilkan'}
+                </button>
+              </div>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 8 }}>
-              {customers.map(c => {
-                const done = readIds.has(c.id)
-                return (
-                  <div
-                    key={c.id}
-                    style={{
-                      padding: '9px 11px', borderRadius: 10, border: '1px solid',
-                      borderColor: done ? 'var(--mint)' : 'var(--border)',
-                      background: done ? 'var(--success-bg)' : 'var(--card)',
-                      display: 'flex', alignItems: 'center', gap: 8,
-                      cursor: !done ? 'pointer' : 'default',
-                    }}
-                    onClick={() => !done && handleSelectCustomer(c)}
-                  >
-                    <span style={{ fontSize: 16 }}>{done ? '✅' : '⏳'}</span>
-                    <div>
-                      <div style={{ fontWeight: 600, fontSize: 12 }}>{c.name}</div>
-                      <div style={{ fontSize: 10, color: 'var(--text-hint)' }}>{c.meter} · {c.group}</div>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
+
+            {showStatusPanel && (
+              statusCustomers.length === 0 ? (
+                <div style={{ textAlign: 'center', color: 'var(--text-hint)', fontSize: 12, padding: '12px 0' }}>
+                  Memuat data pelanggan...
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 8 }}>
+                  {statusCustomers.map(c => {
+                    const done = readIds.has(c.id)
+                    return (
+                      <div
+                        key={c.id}
+                        style={{
+                          padding: '9px 11px', borderRadius: 10, border: '1px solid',
+                          borderColor: done ? 'var(--mint)' : 'var(--border)',
+                          background: done ? 'var(--success-bg)' : 'var(--card)',
+                          display: 'flex', alignItems: 'center', gap: 8,
+                          cursor: !done ? 'pointer' : 'default',
+                        }}
+                        onClick={() => !done && handleSelectCustomer(c)}
+                      >
+                        <span style={{ fontSize: 16 }}>{done ? '✅' : '⏳'}</span>
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: 12 }}>{c.name}</div>
+                          <div style={{ fontSize: 10, color: 'var(--text-hint)' }}>{c.meter} · {c.group}</div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )
+            )}
           </Card>
         </div>
       </div>
@@ -778,19 +1038,23 @@ export default function Meters() {
       <InvoiceModal open={!!newBill} onClose={() => setNewBill(null)} bill={newBill} />
 
       {/* Photo preview modal */}
-      {photoPreview && (
+      {(photoPreview || loadingPhoto) && (
         <div
-          onClick={() => setPhotoPreview(null)}
+          onClick={() => { if (!loadingPhoto) setPhotoPreview(null) }}
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', zIndex: 1000,
             display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-          <div onClick={e => e.stopPropagation()} style={{ position: 'relative', maxWidth: 480, width: '100%' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-              <span style={{ color: '#fff', fontWeight: 700, fontSize: 14 }}>📷 Foto Pembacaan Meter</span>
-              <button onClick={() => setPhotoPreview(null)}
-                style={{ background: 'none', border: 'none', color: '#fff', fontSize: 22, cursor: 'pointer', lineHeight: 1 }}>✕</button>
+          {loadingPhoto ? (
+            <div style={{ color: '#fff', fontSize: 14 }}>Memuat foto...</div>
+          ) : (
+            <div onClick={e => e.stopPropagation()} style={{ position: 'relative', maxWidth: 480, width: '100%' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                <span style={{ color: '#fff', fontWeight: 700, fontSize: 14 }}>📷 Foto Pembacaan Meter</span>
+                <button onClick={() => setPhotoPreview(null)}
+                  style={{ background: 'none', border: 'none', color: '#fff', fontSize: 22, cursor: 'pointer', lineHeight: 1 }}>✕</button>
+              </div>
+              <img src={photoPreview} alt="Foto meter" style={{ width: '100%', borderRadius: 12, display: 'block' }} />
             </div>
-            <img src={photoPreview} alt="Foto meter" style={{ width: '100%', borderRadius: 12, display: 'block' }} />
-          </div>
+          )}
         </div>
       )}
     </div>

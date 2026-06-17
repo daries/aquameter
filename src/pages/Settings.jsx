@@ -109,6 +109,11 @@ export default function Settings() {
           installFee:               data.installFee               || '500000',
           installAdminFee:          data.installAdminFee          || '50000',
           thermalPaperWidth:        data.thermalPaperWidth        || '58',
+          paymentMethod:            data.paymentMethod            || 'none',
+          paymentBankName:          data.paymentBankName          || '',
+          paymentAccountNumber:     data.paymentAccountNumber     || '',
+          paymentAccountName:       data.paymentAccountName       || '',
+          paymentQrCode:            data.paymentQrCode            || '',
         })
         if (dbData) {
           setDbRuntime(dbData.runtime)
@@ -385,6 +390,141 @@ export default function Settings() {
             disabled={saving === 'printer'}
           >
             {saving === 'printer' ? 'Menyimpan...' : 'Simpan'}
+          </Button>
+        )}
+      </Card>
+
+      {/* ── Metode Pembayaran ── */}
+      <Card style={{ gridColumn: '1/-1' }}>
+        <div className="card-title" style={{ marginBottom: 4 }}>💳 Metode Pembayaran</div>
+        <div style={{ fontSize: 12, color: 'var(--text-sec)', marginBottom: 16 }}>
+          Info pembayaran yang dikirim otomatis via WhatsApp bersama tagihan. Rekening tampil sebagai teks;
+          QR Code dikirim sebagai gambar terpisah.
+        </div>
+
+        {/* Pilihan metode */}
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
+          {[
+            { val: 'none',   icon: '🚫', label: 'Tidak Ada',       desc: 'Tidak dikirim ke pelanggan' },
+            { val: 'bank',   icon: '🏦', label: 'Rekening Bank',   desc: 'Info rekening sebagai teks WA' },
+            { val: 'qrcode', icon: '📷', label: 'QR Code',         desc: 'Gambar QR dikirim via WA' },
+            { val: 'both',   icon: '✅', label: 'Keduanya',        desc: 'Rekening teks + gambar QR' },
+          ].map(opt => (
+            <button
+              key={opt.val}
+              onClick={() => isAdmin && setForm(p => ({ ...p, paymentMethod: opt.val }))}
+              style={{
+                padding: '10px 16px', borderRadius: 10, textAlign: 'left',
+                border: '2px solid',
+                borderColor: form.paymentMethod === opt.val ? 'var(--ocean)' : 'var(--border)',
+                background: form.paymentMethod === opt.val ? 'var(--ocean-pale)' : 'var(--surface-2)',
+                cursor: isAdmin ? 'pointer' : 'default', minWidth: 130,
+              }}
+            >
+              <div style={{ fontWeight: 700, fontSize: 13, color: form.paymentMethod === opt.val ? 'var(--ocean)' : 'var(--text)' }}>
+                {opt.icon} {opt.label}
+              </div>
+              <div style={{ fontSize: 10, color: 'var(--text-hint)', marginTop: 2 }}>{opt.desc}</div>
+            </button>
+          ))}
+        </div>
+
+        <div className="grid-2" style={{ gap: 16 }}>
+          {/* Rekening Bank */}
+          {(form.paymentMethod === 'bank' || form.paymentMethod === 'both') && (
+            <div>
+              <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12, color: 'var(--text)' }}>🏦 Detail Rekening Bank</div>
+              <div className="form-group">
+                <label className="form-label">Nama Bank</label>
+                <input className="form-input" placeholder="cth: BRI, BNI, Mandiri, BSI" {...f('paymentBankName')} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Nomor Rekening</label>
+                <input className="form-input mono" placeholder="cth: 1234-5678-9012" {...f('paymentAccountNumber')} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Atas Nama</label>
+                <input className="form-input" placeholder="Nama pemilik rekening" {...f('paymentAccountName')} />
+              </div>
+              {/* Preview teks WA */}
+              {(form.paymentBankName || form.paymentAccountNumber) && (
+                <div style={{ background: 'var(--bg-alt)', borderRadius: 8, padding: '10px 12px', fontSize: 12, fontFamily: 'monospace', whiteSpace: 'pre-wrap', color: 'var(--text-sec)', marginTop: 4 }}>
+                  {'💳 *Metode Pembayaran:*\n'}
+                  {form.paymentBankName      ? `Bank: ${form.paymentBankName}\n`          : ''}
+                  {form.paymentAccountNumber ? `No. Rek: ${form.paymentAccountNumber}\n`  : ''}
+                  {form.paymentAccountName   ? `a.n. ${form.paymentAccountName}`          : ''}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* QR Code */}
+          {(form.paymentMethod === 'qrcode' || form.paymentMethod === 'both') && (
+            <div>
+              <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12, color: 'var(--text)' }}>📷 Gambar QR Code</div>
+              {form.paymentQrCode ? (
+                <div style={{ marginBottom: 12 }}>
+                  <img
+                    src={form.paymentQrCode}
+                    alt="QR Code Pembayaran"
+                    style={{ width: 160, height: 160, objectFit: 'contain', borderRadius: 10, border: '1px solid var(--border)', display: 'block' }}
+                  />
+                  {isAdmin && (
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      style={{ marginTop: 8, color: 'var(--danger)', fontSize: 11 }}
+                      onClick={() => setForm(p => ({ ...p, paymentQrCode: '' }))}
+                    >
+                      ✕ Hapus QR
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div style={{ width: 160, height: 160, borderRadius: 10, border: '2px dashed var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 12, background: 'var(--bg-alt)', flexDirection: 'column', gap: 6 }}>
+                  <span style={{ fontSize: 28 }}>📷</span>
+                  <span style={{ fontSize: 11, color: 'var(--text-hint)' }}>Belum ada QR</span>
+                </div>
+              )}
+              {isAdmin && (
+                <label style={{ cursor: 'pointer' }}>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    style={{ display: 'none' }}
+                    onChange={e => {
+                      const file = e.target.files[0]
+                      e.target.value = ''
+                      if (!file) return
+                      const reader = new FileReader()
+                      reader.onload = ev => setForm(p => ({ ...p, paymentQrCode: ev.target.result }))
+                      reader.readAsDataURL(file)
+                    }}
+                  />
+                  <span className="btn btn-ghost btn-sm">📁 Upload Gambar QR</span>
+                </label>
+              )}
+              <div style={{ fontSize: 11, color: 'var(--text-hint)', marginTop: 8 }}>
+                Format: JPG/PNG. Gambar akan dikirim sebagai pesan WhatsApp terpisah.
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Hint variabel template */}
+        {form.paymentMethod !== 'none' && (
+          <div style={{ background: 'var(--ocean-pale)', borderRadius: 8, padding: '10px 14px', fontSize: 12, color: 'var(--ocean)', marginTop: 16 }}>
+            💡 Tambahkan <b>{'{metode_pembayaran}'}</b> ke template pesan WhatsApp baca meter / tagihan agar info pembayaran muncul di pesan.
+          </div>
+        )}
+
+        {isAdmin && (
+          <Button
+            variant="primary"
+            style={{ marginTop: 16 }}
+            onClick={() => save('pembayaran', ['paymentMethod','paymentBankName','paymentAccountNumber','paymentAccountName','paymentQrCode'])}
+            disabled={saving === 'pembayaran'}
+          >
+            {saving === 'pembayaran' ? 'Menyimpan...' : 'Simpan'}
           </Button>
         )}
       </Card>

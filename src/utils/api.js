@@ -49,9 +49,10 @@ export const customerAPI = {
 
 // ─── Readings ───
 export const readingAPI = {
-  getAll: (params)    => api.get('/readings', { params }),
-  create: (data)      => api.post('/readings', data),
-  update: (id, data)  => api.patch(`/readings/${id}`, data),
+  getAll:   (params)    => api.get('/readings', { params }),
+  getPhoto: (id)        => api.get(`/readings/${id}/photo`),
+  create:   (data)      => api.post('/readings', data),
+  update:   (id, data)  => api.patch(`/readings/${id}`, data),
 }
 
 // ─── Bills ───

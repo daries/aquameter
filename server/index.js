@@ -70,6 +70,7 @@ const {
 const {
   listReadings,
   getReadingRowById,
+  getReadingPhoto,
   getCustomerRowById: getMeterCustomerRowById,
   getBillByCustomerPeriod,
   createReadingWithBill,
@@ -115,6 +116,24 @@ function addWebhookLog(entry) {
 }
 
 // ─── Helper functions ───
+function buildPaymentText(sett) {
+  const method = sett.paymentMethod || 'none'
+  if (method === 'none') return ''
+  const lines = []
+  if (method === 'bank' || method === 'both') {
+    if (sett.paymentBankName || sett.paymentAccountNumber) {
+      lines.push('💳 *Metode Pembayaran:*')
+      if (sett.paymentBankName)      lines.push(`Bank: ${sett.paymentBankName}`)
+      if (sett.paymentAccountNumber) lines.push(`No. Rek: ${sett.paymentAccountNumber}`)
+      if (sett.paymentAccountName)   lines.push(`a.n. ${sett.paymentAccountName}`)
+    }
+  }
+  if (method === 'qrcode' || method === 'both') {
+    lines.push(lines.length ? 'atau via QRIS (QR Code terlampir)' : '💳 *Metode Pembayaran:* QRIS (QR Code terlampir)')
+  }
+  return lines.join('\n')
+}
+
 function fmtDate(d) {
   if (!d) return '—'
   const dateOnly = String(d).split('T')[0].split(' ')[0]
@@ -262,19 +281,32 @@ router.get('/readings', async (req, res) => {
   }
 })
 
+router.get('/readings/:id/photo', async (req, res) => {
+  try {
+    const photo = await getReadingPhoto(appDb, req.params.id)
+    if (!photo) return res.status(404).json({ error: 'Foto tidak ditemukan' })
+    res.set('Cache-Control', 'no-store')
+    res.json({ photo })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
 router.patch('/readings/:id', async (req, res) => {
-  const { currentStand, date, note } = req.body
+  const { currentStand, date, note, photo } = req.body
   const reading = await getReadingRowById(appDb, req.params.id)
   if (!reading) return res.status(404).json({ error: 'Pembacaan tidak ditemukan' })
 
-  // Check bill status
   const bill = await getBillByCustomerPeriod(appDb, reading.cust_id, reading.period)
   if (bill && bill.status === 'paid')
     return res.status(400).json({ error: 'Tagihan sudah lunas, pembacaan tidak bisa diedit' })
 
-  const newStand = parseFloat(currentStand)
+  // currentStand opsional — jika tidak dikirim, gunakan stand yang ada
+  const newStand = currentStand !== undefined ? parseFloat(currentStand) : reading.current_stand
   if (isNaN(newStand) || newStand < reading.last_stand)
     return res.status(400).json({ error: `Stand baru tidak boleh kurang dari stand lama (${reading.last_stand})` })
+
+  const standChanged = currentStand !== undefined && newStand !== reading.current_stand
 
   const cust     = await getMeterCustomerRowById(appDb, reading.cust_id)
   const usage    = newStand - reading.last_stand
@@ -286,26 +318,31 @@ router.patch('/readings/:id', async (req, res) => {
   const total    = cost + admin + ppj
 
   try {
-    const updated = await updateReadingAndBill(appDb, { reading, bill, newStand, usage, date, note, cost, ppj, total })
+    const payload = { reading, bill, newStand, usage, date, note, cost, ppj, total }
+    if (photo !== undefined) payload.photo = photo
+    const updated = await updateReadingAndBill(appDb, payload)
 
-    const sett = getSettings()
-    if (sett.waEnabled === 'true' && cust.phone) {
-      const readDate = date || reading.date
-      const bulan    = new Date(readDate + 'T00:00:00').toLocaleDateString('id-ID', { timeZone: getTimezone(), month: 'long', year: 'numeric' })
-      const billData = bill ? await getBillByCustomerPeriod(appDb, reading.cust_id, reading.period) : null
-      const msgBody = (sett.waTemplateReading || '')
-        .replace('{nama}',          cust.name)
-        .replace('{nomor_meter}',   cust.meter)
-        .replace('{bulan}',         bulan)
-        .replace('{tanggal_baca}',  fmtDate(readDate))
-        .replace('{meter_awal}',    reading.last_stand)
-        .replace('{meter_akhir}',   newStand)
-        .replace('{pemakaian}',     usage)
-        .replace('{tagihan}',       billData ? Number(billData.total).toLocaleString('id-ID') : '—')
-        .replace('{jatuh_tempo}',   fmtDate(billData?.due_date))
-        .replace('{nama_perusahaan}', sett.companyName || 'PAMSIMAS')
-      const msg = `📝 *REVISI BACA METER*\n\n${msgBody}`
-      wa.enqueue(cust.phone, msg, `Revisi baca meter – ${cust.name}`)
+    // Kirim notif WA hanya jika stand berubah
+    if (standChanged) {
+      const sett = getSettings()
+      if (sett.waEnabled === 'true' && cust.phone) {
+        const readDate = date || reading.date
+        const bulan    = new Date(readDate + 'T00:00:00').toLocaleDateString('id-ID', { timeZone: getTimezone(), month: 'long', year: 'numeric' })
+        const billData = bill ? await getBillByCustomerPeriod(appDb, reading.cust_id, reading.period) : null
+        const msgBody = (sett.waTemplateReading || '')
+          .replace('{nama}',          cust.name)
+          .replace('{nomor_meter}',   cust.meter)
+          .replace('{bulan}',         bulan)
+          .replace('{tanggal_baca}',  fmtDate(readDate))
+          .replace('{meter_awal}',    reading.last_stand)
+          .replace('{meter_akhir}',   newStand)
+          .replace('{pemakaian}',     usage)
+          .replace('{tagihan}',       billData ? Number(billData.total).toLocaleString('id-ID') : '—')
+          .replace('{jatuh_tempo}',   fmtDate(billData?.due_date))
+          .replace('{nama_perusahaan}', sett.companyName || 'PAMSIMAS')
+        const msg = `📝 *REVISI BACA METER*\n\n${msgBody}`
+        wa.enqueue(cust.phone, msg, `Revisi baca meter – ${cust.name}`)
+      }
     }
 
     res.json(updated)
@@ -361,17 +398,22 @@ router.post('/readings', async (req, res) => {
       const bill  = result.rawBill
       const bulan = new Date(date + 'T00:00:00').toLocaleDateString('id-ID', { timeZone: getTimezone(), month: 'long', year: 'numeric' })
       const msg   = (sett.waTemplateReading || '')
-        .replace('{nama}',          cust.name)
-        .replace('{nomor_meter}',   cust.meter)
-        .replace('{bulan}',         bulan)
-        .replace('{tanggal_baca}',  fmtDate(date))
-        .replace('{meter_awal}',    cust.last_stand)
-        .replace('{meter_akhir}',   currentStand)
-        .replace('{pemakaian}',     usage)
-        .replace('{tagihan}',       bill ? Number(bill.total).toLocaleString('id-ID') : '—')
-        .replace('{jatuh_tempo}',   fmtDate(bill?.due_date))
-        .replace('{nama_perusahaan}', sett.companyName || 'PAMSIMAS')
+        .replace('{nama}',               cust.name)
+        .replace('{nomor_meter}',        cust.meter)
+        .replace('{bulan}',              bulan)
+        .replace('{tanggal_baca}',       fmtDate(date))
+        .replace('{meter_awal}',         cust.last_stand)
+        .replace('{meter_akhir}',        currentStand)
+        .replace('{pemakaian}',          usage)
+        .replace('{tagihan}',            bill ? Number(bill.total).toLocaleString('id-ID') : '—')
+        .replace('{jatuh_tempo}',        fmtDate(bill?.due_date))
+        .replace('{nama_perusahaan}',    sett.companyName || 'PAMSIMAS')
+        .replace('{metode_pembayaran}',  buildPaymentText(sett))
       wa.enqueue(cust.phone, msg, `Notif baca meter – ${cust.name}`)
+      const pm = sett.paymentMethod || 'none'
+      if ((pm === 'qrcode' || pm === 'both') && sett.paymentQrCode) {
+        wa.enqueueImage(cust.phone, sett.paymentQrCode, `QR Pembayaran – ${sett.companyName || 'PAMSIMAS'}`, `QR bayar – ${cust.name}`)
+      }
     }
 
     res.status(201).json({ reading: result.reading, bill: result.bill })
@@ -413,13 +455,14 @@ router.patch('/bills/:id/pay', async (req, res) => {
     if (settWA.waEnabled === 'true' && custWA?.phone) {
       const bulan  = bill.period
       const msg    = (settWA.waTemplatePayment || '')
-        .replace('{nama}',            custWA.name)
-        .replace('{nomor_meter}',     custWA.meter)
-        .replace('{invoice}',         bill.invoice_no)
-        .replace('{bulan}',           bulan)
-        .replace('{jumlah}',          Number(bill.total).toLocaleString('id-ID'))
-        .replace('{tgl_bayar}',       formatLongDate(getTimezone()))
-        .replace('{nama_perusahaan}', settWA.companyName || 'PAMSIMAS')
+        .replace('{nama}',               custWA.name)
+        .replace('{nomor_meter}',        custWA.meter)
+        .replace('{invoice}',            bill.invoice_no)
+        .replace('{bulan}',              bulan)
+        .replace('{jumlah}',             Number(bill.total).toLocaleString('id-ID'))
+        .replace('{tgl_bayar}',          formatLongDate(getTimezone()))
+        .replace('{nama_perusahaan}',    settWA.companyName || 'PAMSIMAS')
+        .replace('{metode_pembayaran}',  buildPaymentText(settWA))
       wa.enqueue(custWA.phone, msg, `Konfirmasi bayar – ${custWA.name}`)
     }
 
