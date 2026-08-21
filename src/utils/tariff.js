@@ -4,7 +4,7 @@ export const TARIFFS = {
     name: 'R1 - Rumah Tangga Kecil',
     description: 'Keluarga tidak mampu / MBR',
     blocks: [
-      { limit: 10, price: 1600 },
+      { limit: 10, price: 1500 },
       { limit: 20, price: 2000 },
       { limit: 30, price: 2500 },
       { limit: Infinity, price: 3000 },

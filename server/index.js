@@ -129,7 +129,7 @@ function buildPaymentText(sett) {
     }
   }
   if (method === 'qrcode' || method === 'both') {
-    lines.push(lines.length ? 'atau via QRIS (QR Code terlampir)' : '💳 *Metode Pembayaran:* QRIS (QR Code terlampir)')
+    lines.push(lines.length ? 'atau via QRIS (hubungi kami untuk kode QR)' : '💳 *Metode Pembayaran:* QRIS (hubungi kami untuk kode QR)')
   }
   return lines.join('\n')
 }
@@ -340,6 +340,7 @@ router.patch('/readings/:id', async (req, res) => {
           .replace('{tagihan}',       billData ? Number(billData.total).toLocaleString('id-ID') : '—')
           .replace('{jatuh_tempo}',   fmtDate(billData?.due_date))
           .replace('{nama_perusahaan}', sett.companyName || 'PAMSIMAS')
+          .replace('{metode_pembayaran}', buildPaymentText(sett))
         const msg = `📝 *REVISI BACA METER*\n\n${msgBody}`
         wa.enqueue(cust.phone, msg, `Revisi baca meter – ${cust.name}`)
       }
@@ -410,10 +411,6 @@ router.post('/readings', async (req, res) => {
         .replace('{nama_perusahaan}',    sett.companyName || 'PAMSIMAS')
         .replace('{metode_pembayaran}',  buildPaymentText(sett))
       wa.enqueue(cust.phone, msg, `Notif baca meter – ${cust.name}`)
-      const pm = sett.paymentMethod || 'none'
-      if ((pm === 'qrcode' || pm === 'both') && sett.paymentQrCode) {
-        wa.enqueueImage(cust.phone, sett.paymentQrCode, `QR Pembayaran – ${sett.companyName || 'PAMSIMAS'}`, `QR bayar – ${cust.name}`)
-      }
     }
 
     res.status(201).json({ reading: result.reading, bill: result.bill })

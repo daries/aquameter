@@ -106,33 +106,14 @@ async function sendViaFonnte(phone, text) {
   })
 
   if (resp.data?.status === false) {
-    throw new Error(resp.data?.reason || resp.data?.message || 'Gagal kirim via Fonnte')
-  }
-}
-
-async function sendImageViaFonnte(phone, imageBase64, caption) {
-  if (!fonnteToken) throw new Error('Token Fonnte belum dikonfigurasi')
-
-  let num = String(phone).split(':')[0].replace(/\D/g, '')
-  if (num.startsWith('0'))   num = '62' + num.slice(1)
-  if (!num.startsWith('62')) num = '62' + num
-
-  const base64Clean = imageBase64.replace(/^data:image\/\w+;base64,/, '')
-
-  const resp = await axios.post('https://api.fonnte.com/send', {
-    target: num,
-    message: caption || '',
-    file: `data:image/jpeg;base64,${base64Clean}`,
-    countryCode: '62',
-  }, {
-    headers: { Authorization: fonnteToken },
-    timeout: 60000,
-    maxBodyLength: Infinity,
-    maxContentLength: Infinity,
-  })
-
-  if (resp.data?.status === false) {
-    throw new Error(resp.data?.reason || resp.data?.message || 'Gagal kirim gambar via Fonnte')
+    const reason = resp.data?.reason || resp.data?.message || 'Gagal kirim via Fonnte'
+    // Fonnte melaporkan device HP-nya sudah logout/terputus dari WhatsApp —
+    // sinkronkan status koneksi di sini agar dashboard tidak menampilkan "Terhubung" palsu
+    if (/disconnect/i.test(reason)) {
+      connectionStatus = 'disconnected'
+      fonntePhone      = null
+    }
+    throw new Error(reason)
   }
 }
 
@@ -157,27 +138,6 @@ function enqueue(recipient, text, description = '') {
     addedAt:  new Date().toISOString(),
     sentAt:   null,
     error:    null,
-  }
-  queue.push(item)
-  trimQueue()
-  processQueue()
-  return item.id
-}
-
-function enqueueImage(recipient, imageBase64, caption, description = '') {
-  const jid   = recipient.includes('@') ? jidNormalizedUser(recipient) : formatJid(recipient)
-  const phone = jid.split('@')[0]
-  const item  = {
-    id: nextId(),
-    jid,
-    phone,
-    description,
-    text:        caption || '',
-    imageBase64,
-    status:      'pending',
-    addedAt:     new Date().toISOString(),
-    sentAt:      null,
-    error:       null,
   }
   queue.push(item)
   trimQueue()
@@ -212,25 +172,13 @@ async function processQueue() {
 
       try {
         if (waMode === 'fonnte') {
-          if (item.imageBase64) {
-            await sendImageViaFonnte(item.phone, item.imageBase64, item.text)
-          } else {
-            await sendViaFonnte(item.phone, item.text)
-          }
+          await sendViaFonnte(item.phone, item.text)
         } else {
           if (!sock || connectionStatus !== 'connected') {
             throw new Error('WhatsApp belum terhubung')
           }
           await randomDelay(2000, 5000)
-          if (item.imageBase64) {
-            const imgBuf = Buffer.from(
-              item.imageBase64.replace(/^data:image\/\w+;base64,/, ''),
-              'base64'
-            )
-            await sendWithHumanDelay(item.jid, item.text, imgBuf)
-          } else {
-            await sendWithHumanDelay(item.jid, item.text)
-          }
+          await sendWithHumanDelay(item.jid, item.text)
         }
         item.status = 'sent'
         item.sentAt = new Date().toISOString()
@@ -253,9 +201,7 @@ async function processQueue() {
 }
 
 function getQueue() {
-  return queue.slice(-100).reverse().map(({ imageBase64, ...item }) =>
-    imageBase64 ? { ...item, hasImage: true } : item
-  )
+  return queue.slice(-100).reverse()
 }
 
 function clearDone() {
@@ -419,7 +365,7 @@ function randomDelay(minMs = 2000, maxMs = 6000) {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
-async function sendWithHumanDelay(jid, text, imageBuffer = null) {
+async function sendWithHumanDelay(jid, text) {
   if (!sock) throw new Error('WhatsApp belum terhubung')
   try { await sock.sendPresenceUpdate('composing', jid) } catch (_) {}
   const wordCount    = (text || '').split(/\s+/).length
@@ -429,11 +375,7 @@ async function sendWithHumanDelay(jid, text, imageBuffer = null) {
   try { await sock.sendPresenceUpdate('paused', jid) } catch (_) {}
   await randomDelay(300, 1200)
   if (!sock) throw new Error('WhatsApp terputus saat mengirim')
-  if (imageBuffer) {
-    await sock.sendMessage(jid, { image: imageBuffer, caption: text || '' })
-  } else {
-    await sock.sendMessage(jid, { text })
-  }
+  await sock.sendMessage(jid, { text })
 }
 
 function formatJid(phone) {
@@ -463,7 +405,7 @@ async function disconnect() {
 module.exports = {
   connect, disconnect, onMessage,
   getStatus,
-  enqueue, enqueueImage,
+  enqueue,
   getQueue, clearDone, retryFailed,
   setMode,
   testFonnte: validateFonnteToken,

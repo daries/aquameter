@@ -1,12 +1,42 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { Modal, Button, SummaryRow } from './UI'
 import { fmtRupiah, fmtDate, calcWaterCost, getBillStatus, TARIFFS } from '../utils/tariff'
 import { generateInvoicePDF } from '../utils/pdfGenerator'
 import { printReceiptThermal } from '../utils/receiptPrinter'
 import { useStore } from '../store'
+import { tariffAPI } from '../utils/api'
+
+// Rincian per-blok dari tarif LIVE (dari DB), bukan konstanta statis di utils/tariff.js
+function calcWaterCostLive(tariffBlocks, usage) {
+  let prev = 0
+  const blocks = []
+  for (const block of tariffBlocks) {
+    if (usage <= prev) break
+    const blockLimit = block.limit === null ? usage : block.limit
+    const vol = Math.min(usage - prev, blockLimit - prev)
+    if (vol > 0) {
+      blocks.push({
+        vol,
+        price: block.price,
+        sub: vol * block.price,
+        label: block.limit === null ? `> ${prev} m³` : `${prev + 1}–${block.limit} m³`,
+      })
+    }
+    prev = blockLimit
+    if (block.limit === null) break
+  }
+  return blocks
+}
 
 export function InvoiceModal({ open, onClose, bill, onMarkPaid, onMarkUnpaid, settingsData }) {
   const { settings: storeSettings, markPaid, markUnpaid, showToast } = useStore()
+  const [liveTariffs, setLiveTariffs] = useState(null)
+
+  useEffect(() => {
+    if (!open) return
+    tariffAPI.getAll().then(setLiveTariffs).catch(() => {})
+  }, [open])
+
   if (!bill) return null
 
   // Selalu pakai data dari bill (dari API) — jangan lookup dari store agar tidak tampil data demo lama
@@ -19,7 +49,12 @@ export function InvoiceModal({ open, onClose, bill, onMarkPaid, onMarkUnpaid, se
   // Settings: prefer explicitly passed settingsData (from API), fallback to store
   const settings = settingsData || storeSettings || {}
 
-  const { blocks } = calcWaterCost(customer.group || bill.group || 'R1', bill.usage)
+  const group = customer.group || bill.group || 'R1'
+  // Pakai tarif live dari DB (mengikuti setting terbaru); fallback ke konstanta statis
+  // hanya selagi tarif live belum selesai di-fetch atau jika fetch gagal
+  const blocks = liveTariffs?.[group]
+    ? calcWaterCostLive(liveTariffs[group], bill.usage)
+    : calcWaterCost(group, bill.usage).blocks
   const status = getBillStatus(bill)
 
   const handleMarkPaid = () => {
